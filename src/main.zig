@@ -911,3 +911,154 @@ test "parse preformatted blocks (with alt text)" {
     try testFragmentParsing(c_code_block, "```alt\r\nint main() {\r\n    return 0;\r\n}\r\n```");
     try testFragmentParsing(c_code_block, "```alt\r\nint main() {\r\n    return 0;\r\n}\r\n```\r\n");
 }
+
+fn testSequenceParsing(expected_sequence: []const Fragment, text: []const u8) !void {
+    // duplicate the passed in text to clear it later.
+    const dupe_text = try std.testing.allocator.dupe(u8, text);
+    defer std.testing.allocator.free(dupe_text);
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var actual_sequence = std.ArrayList(Fragment).init(std.testing.allocator);
+    defer actual_sequence.deinit();
+
+    {
+        var parser = Parser.init(std.testing.allocator);
+        defer parser.deinit();
+
+        var offset: usize = 0;
+        while (offset < dupe_text.len) {
+            var res = try parser.feed(&arena.allocator, dupe_text[offset..]);
+            offset += res.consumed;
+            if (res.fragment) |frag| {
+                try actual_sequence.append(frag);
+            }
+        }
+
+        std.testing.expectEqual(text.len, offset);
+
+        if (try parser.finalize(&arena.allocator)) |frag| {
+            try actual_sequence.append(frag);
+        }
+    }
+
+    // Clear the input text to make sure we didn't accidently pass a reference to our input slice
+    std.mem.set(u8, dupe_text, '?');
+
+    std.testing.expectEqual(expected_sequence.len, actual_sequence.items.len);
+
+    for (expected_sequence) |expected, i| {
+        expectFragmentEqual(expected, actual_sequence.items[i]);
+    }
+}
+
+test "basic sequence parsing" {
+    try testSequenceParsing(
+        &[_]Fragment{
+            Fragment{ .paragraph = "Hello" },
+            Fragment{ .paragraph = "World!" },
+        },
+        \\Hello
+        \\World!
+        ,
+    );
+    try testSequenceParsing(
+        &[_]Fragment{
+            Fragment{ .empty = {} },
+            Fragment{ .paragraph = "World!" },
+        },
+        \\
+        \\World!
+        \\
+        ,
+    );
+    try testSequenceParsing(
+        &[_]Fragment{
+            Fragment{ .heading = Heading{ .level = .h1, .text = "Heading" } },
+            Fragment{ .paragraph = "This is a bullet list:" },
+            Fragment{ .list = TextLines{ .lines = &[_][]const u8{
+                "Tortillias",
+                "Cheese Dip",
+                "Spicy Dip",
+            } } },
+        },
+        \\# Heading
+        \\This is a bullet list:
+        \\* Tortillias
+        \\* Cheese Dip
+        \\* Spicy Dip
+        \\
+        ,
+    );
+}
+
+test "sequenc hand over between block types" {
+    // these are all possible permutations of list, quote and preformatted
+    // this tests the proper hand over and termination between all block types
+
+    const sequence_permutations = [_][3]usize{
+        [3]usize{ 0, 1, 2 },
+        [3]usize{ 1, 0, 2 },
+        [3]usize{ 2, 0, 1 },
+        [3]usize{ 0, 2, 1 },
+        [3]usize{ 1, 2, 0 },
+        [3]usize{ 2, 1, 0 },
+    };
+
+    const fragment_src = [3]Fragment{
+        Fragment{
+            .quote = TextLines{
+                .lines = &[_][]const u8{
+                    "ein",
+                    "stein",
+                    "said",
+                },
+            },
+        },
+        Fragment{
+            .preformatted = Preformatted{
+                .alt_text = null,
+                .text = TextLines{
+                    .lines = &[_][]const u8{
+                        "int main() {",
+                        "    return 0;",
+                        "}",
+                    },
+                },
+            },
+        },
+        Fragment{
+            .list = TextLines{
+                .lines = &[_][]const u8{
+                    "philly",
+                    "cheese",
+                    "steak",
+                },
+            },
+        },
+    };
+
+    const text_src = [3][]const u8{
+        "> ein\r\n>stein\r\n> said \r\n",
+        "```\r\nint main() {\r\n    return 0;\r\n}\r\n```\r\n",
+        "* philly \r\n*    cheese   \r\n* steak\r\n",
+    };
+
+    inline for (sequence_permutations) |permutation| {
+        const expected_sequence = [_]Fragment{
+            Fragment{ .paragraph = "---" },
+            fragment_src[permutation[0]],
+            fragment_src[permutation[1]],
+            fragment_src[permutation[2]],
+            Fragment{ .paragraph = "---" },
+        };
+        const text_rendering =
+            "---\r\n" ++
+            text_src[permutation[0]] ++
+            text_src[permutation[1]] ++
+            text_src[permutation[2]] ++
+            "---\r\n";
+        try testSequenceParsing(&expected_sequence, text_rendering);
+    }
+}
