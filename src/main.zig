@@ -151,8 +151,18 @@ pub const Parser = struct {
     const BlockType = enum { preformatted, block_quote, list };
     fn createBlockFragment(self: *Self, fragment_allocator: *std.mem.Allocator, fragment_type: BlockType) !Fragment {
         var alt_text: ?[]const u8 = if (fragment_type == .preformatted) blk: {
-            break :blk null;
+            std.debug.assert(self.text_block_buffer.items.len > 0);
+
+            const src_alt_text = self.text_block_buffer.orderedRemove(0);
+            defer self.allocator.free(src_alt_text);
+
+            break :blk if (!std.mem.eql(u8, src_alt_text, ""))
+                try fragment_allocator.dupe(u8, src_alt_text)
+            else
+                null;
         } else null;
+        errdefer if (alt_text) |text|
+            fragment_allocator.free(text);
 
         var lines = try fragment_allocator.alloc([]const u8, self.text_block_buffer.items.len);
         errdefer fragment_allocator.free(lines);
@@ -175,10 +185,7 @@ pub const Parser = struct {
 
         return switch (fragment_type) {
             .preformatted => Fragment{ .preformatted = Preformatted{
-                .alt_text = if (alt_text) |text|
-                    try fragment_allocator.dupe(u8, text)
-                else
-                    null,
+                .alt_text = alt_text,
                 .text = TextLines{ .lines = lines },
             } },
             .block_quote => Fragment{ .quote = TextLines{ .lines = lines } },
@@ -205,16 +212,22 @@ pub const Parser = struct {
         var offset: usize = 0;
         main_loop: while (offset < slice.len) : (offset += 1) {
             if (slice[offset] == '\n') {
-
-                // When we are testing, we set the temporary line memory to '!' so we can recognize this in tests.
-                defer if (std.builtin.is_test) std.mem.set(u8, self.line_buffer.items, '!');
-
                 var line = self.line_buffer.items;
                 if (line.len > 0 and line[line.len - 1] == '\r') {
                     line = line[0 .. line.len - 1];
                 }
 
-                if (std.mem.startsWith(u8, line, "*")) {
+                if (self.state == .preformatted and !std.mem.startsWith(u8, line, "```")) {
+                    // we are in a preformatted block that is not terminated right now...
+                    const line_buffer = try self.allocator.dupe(u8, line);
+                    errdefer self.allocator.free(line_buffer);
+
+                    try self.text_block_buffer.append(line_buffer);
+
+                    self.line_buffer.shrinkRetainingCapacity(0);
+
+                    continue :main_loop;
+                } else if (std.mem.startsWith(u8, line, "* ")) {
                     switch (self.state) {
                         .block_quote => {
                             var res = Result{
@@ -240,7 +253,7 @@ pub const Parser = struct {
 
                     self.state = .list;
 
-                    const line_buffer = try self.allocator.dupe(u8, trimLine(line[1..]));
+                    const line_buffer = try self.allocator.dupe(u8, trimLine(line[2..]));
                     errdefer self.allocator.free(line_buffer);
 
                     try self.text_block_buffer.append(line_buffer);
@@ -283,7 +296,47 @@ pub const Parser = struct {
 
                     continue :main_loop;
                 } else if (std.mem.startsWith(u8, line, "```")) {
-                    //
+                    switch (self.state) {
+                        .list => {
+                            self.state = .default;
+                            return Result{
+                                .consumed = offset, // one less so we will land here the next round again
+                                .fragment = try self.createBlockFragment(fragment_allocator, .list),
+                            };
+                        },
+                        .block_quote => {
+                            self.state = .default;
+                            return Result{
+                                .consumed = offset, // one less so we will land here the next round again
+                                .fragment = try self.createBlockFragment(fragment_allocator, .block_quote),
+                            };
+                        },
+                        .preformatted => {
+                            self.state = .default;
+                            self.line_buffer.shrinkRetainingCapacity(0);
+                            return Result{
+                                .consumed = offset + 1,
+                                .fragment = try self.createBlockFragment(fragment_allocator, .preformatted),
+                            };
+                        },
+                        .default => {
+                            std.debug.assert(self.text_block_buffer.items.len == 0);
+                            self.state = .preformatted;
+
+                            // preformatted text blocks are prefixed with a line that stores the alt text.
+                            // if the alt text string is empty, we're storing a `null` there later.
+
+                            const line_buffer = try self.allocator.dupe(u8, trimLine(line[3..]));
+                            errdefer self.allocator.free(line_buffer);
+
+                            try self.text_block_buffer.append(line_buffer);
+
+                            self.line_buffer.shrinkRetainingCapacity(0);
+
+                            continue :main_loop;
+                        },
+                    }
+                    unreachable;
                 }
 
                 // If we get here, we are reading a line that is not in the block anymore, so
@@ -582,6 +635,7 @@ fn testFragmentParsing(fragment: ?Fragment, text: []const u8) !void {
         offset += res.consumed;
         if (res.fragment) |*frag| {
             defer frag.free(std.testing.allocator);
+            std.testing.expectEqual(false, got_fragment);
 
             // Clear the input text to make sure we didn't accidently pass a reference to our input slice
             std.mem.set(u8, dupe_text, '?');
@@ -646,6 +700,9 @@ test "parse heading line" {
     try testFragmentParsing(Fragment{ .heading = Heading{ .level = .h3, .text = "Hello World!" } }, "###Hello World!\r\n");
     try testFragmentParsing(Fragment{ .heading = Heading{ .level = .h3, .text = "Hello World!" } }, "### Hello World!");
     try testFragmentParsing(Fragment{ .heading = Heading{ .level = .h3, .text = "Hello World!" } }, "### Hello World!\r\n");
+
+    try testFragmentParsing(Fragment{ .heading = Heading{ .level = .h3, .text = "#H1" } }, "####H1\r\n");
+    try testFragmentParsing(Fragment{ .heading = Heading{ .level = .h3, .text = "#H1" } }, "####H1\r\n");
 }
 
 test "parse link (no title)" {
@@ -715,17 +772,13 @@ test "parse list block" {
         },
     };
 
-    try testFragmentParsing(list_0, "*item 0");
-    try testFragmentParsing(list_0, "*item 0\r\n");
     try testFragmentParsing(list_0, "* item 0");
     try testFragmentParsing(list_0, "* item 0\r\n");
-    try testFragmentParsing(list_0, "*item 0     ");
-    try testFragmentParsing(list_0, "*item 0     \r\n");
     try testFragmentParsing(list_0, "*    item 0     ");
     try testFragmentParsing(list_0, "*    item 0     \r\n");
 
-    try testFragmentParsing(list_3, "*item 1\r\n*item 2\r\n*item 3");
-    try testFragmentParsing(list_3, "*item 1\r\n*item 2\r\n*item 3\r\n");
+    try testFragmentParsing(list_3, "* item 1\r\n* item 2\r\n* item 3");
+    try testFragmentParsing(list_3, "* item 1\r\n* item 2\r\n* item 3\r\n");
 }
 
 test "parse quote block" {
@@ -758,4 +811,103 @@ test "parse quote block" {
 
     try testFragmentParsing(quote_3, ">item 1\r\n>item 2\r\n>item 3");
     try testFragmentParsing(quote_3, ">item 1\r\n>item 2\r\n>item 3\r\n");
+}
+
+test "parse preformatted blocks (no alt text)" {
+    const empty_block = Fragment{
+        .preformatted = Preformatted{
+            .alt_text = null,
+            .text = TextLines{
+                .lines = &[_][]const u8{},
+            },
+        },
+    };
+
+    const single_line_block = Fragment{
+        .preformatted = Preformatted{
+            .alt_text = null,
+            .text = TextLines{
+                .lines = &[_][]const u8{
+                    " hello world ",
+                },
+            },
+        },
+    };
+
+    const c_code_block = Fragment{
+        .preformatted = Preformatted{
+            .alt_text = null,
+            .text = TextLines{
+                .lines = &[_][]const u8{
+                    "int main() {",
+                    "    return 0;",
+                    "}",
+                },
+            },
+        },
+    };
+
+    try testFragmentParsing(empty_block, "```");
+    try testFragmentParsing(empty_block, "```\r\n```");
+    try testFragmentParsing(empty_block, "```\r\n```\r\n");
+
+    try testFragmentParsing(single_line_block, "```\r\n hello world ");
+    try testFragmentParsing(single_line_block, "```\r\n hello world \r\n```");
+    try testFragmentParsing(single_line_block, "```\r\n hello world \r\n```\r\n");
+
+    try testFragmentParsing(c_code_block, "```\r\nint main() {\r\n    return 0;\r\n}");
+    try testFragmentParsing(c_code_block, "```\r\nint main() {\r\n    return 0;\r\n}\r\n```");
+    try testFragmentParsing(c_code_block, "```\r\nint main() {\r\n    return 0;\r\n}\r\n```\r\n");
+}
+
+test "parse preformatted blocks (with alt text)" {
+    const empty_block = Fragment{
+        .preformatted = Preformatted{
+            .alt_text = "alt",
+            .text = TextLines{
+                .lines = &[_][]const u8{},
+            },
+        },
+    };
+
+    const single_line_block = Fragment{
+        .preformatted = Preformatted{
+            .alt_text = "alt",
+            .text = TextLines{
+                .lines = &[_][]const u8{
+                    " hello world ",
+                },
+            },
+        },
+    };
+
+    const c_code_block = Fragment{
+        .preformatted = Preformatted{
+            .alt_text = "alt",
+            .text = TextLines{
+                .lines = &[_][]const u8{
+                    "int main() {",
+                    "    return 0;",
+                    "}",
+                },
+            },
+        },
+    };
+
+    try testFragmentParsing(empty_block, "```alt");
+    try testFragmentParsing(empty_block, "```alt\r\n```");
+    try testFragmentParsing(empty_block, "```alt\r\n```\r\n");
+
+    try testFragmentParsing(empty_block, "``` alt");
+    try testFragmentParsing(empty_block, "```alt ");
+    try testFragmentParsing(empty_block, "``` alt ");
+    try testFragmentParsing(empty_block, "```    alt     ");
+
+    try testFragmentParsing(single_line_block, "```alt\r\n hello world ");
+    try testFragmentParsing(single_line_block, "```alt\r\n hello world \r\n```");
+    try testFragmentParsing(single_line_block, "```alt\r\n hello world \r\n```\r\n");
+
+    try testFragmentParsing(c_code_block, "```alt\r\nint main() {\r\n    return 0;\r\n}");
+    try testFragmentParsing(c_code_block, "```alt\r\nint main() {\r\n    return 0;\r\n}\r\n```");
+    try testFragmentParsing(c_code_block, "```alt\r\nint main() {\r\n    return 0;\r\n}\r\n```\r\n");
 }
