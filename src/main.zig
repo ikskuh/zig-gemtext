@@ -123,21 +123,77 @@ pub const Parser = struct {
         fragment: ?Fragment,
     };
 
+    allocator: *std.mem.Allocator,
     line_buffer: std.ArrayList(u8),
+    text_block_buffer: std.ArrayList([]u8),
     state: State,
 
     /// Initialize a new parser.
     pub fn init(allocator: *std.mem.Allocator) Self {
         return Self{
+            .allocator = allocator,
             .line_buffer = std.ArrayList(u8).init(allocator),
+            .text_block_buffer = std.ArrayList([]u8).init(allocator),
             .state = .default,
         };
     }
 
     /// Destroy the parser and all its allocated memory.
     pub fn deinit(self: *Self) void {
+        for (self.text_block_buffer.items) |string| {
+            self.allocator.free(string);
+        }
+        self.text_block_buffer.deinit();
         self.line_buffer.deinit();
         self.* = undefined;
+    }
+
+    const BlockType = enum { preformatted, block_quote, list };
+    fn createBlockFragment(self: *Self, fragment_allocator: *std.mem.Allocator, fragment_type: BlockType) !Fragment {
+        var alt_text: ?[]const u8 = if (fragment_type == .preformatted) blk: {
+            break :blk null;
+        } else null;
+
+        var lines = try fragment_allocator.alloc([]const u8, self.text_block_buffer.items.len);
+        errdefer fragment_allocator.free(lines);
+
+        var offset: usize = 0;
+        errdefer while (offset > 0) {
+            offset -= 1;
+            fragment_allocator.free(lines[offset]);
+        };
+
+        while (offset < lines.len) : (offset += 1) {
+            lines[offset] = try fragment_allocator.dupe(u8, self.text_block_buffer.items[offset]);
+        }
+
+        for (self.text_block_buffer.items) |item| {
+            self.allocator.free(item);
+        }
+
+        self.text_block_buffer.shrinkRetainingCapacity(0);
+
+        return switch (fragment_type) {
+            .preformatted => Fragment{ .preformatted = Preformatted{
+                .alt_text = if (alt_text) |text|
+                    try fragment_allocator.dupe(u8, text)
+                else
+                    null,
+                .text = TextLines{ .lines = lines },
+            } },
+            .block_quote => Fragment{ .quote = TextLines{ .lines = lines } },
+            .list => Fragment{ .list = TextLines{ .lines = lines } },
+        };
+    }
+
+    fn createBlockFragmentFromStateAndResetState(self: *Self, fragment_allocator: *std.mem.Allocator) !?Fragment {
+        defer self.state = .default;
+        return switch (self.state) {
+            .block_quote => try self.createBlockFragment(fragment_allocator, .block_quote),
+            .preformatted => try self.createBlockFragment(fragment_allocator, .preformatted),
+            .list => try self.createBlockFragment(fragment_allocator, .list),
+            .default => null,
+        };
     }
 
     /// Feed a slice into the parser.
@@ -147,9 +203,8 @@ pub const Parser = struct {
     /// `fragment_allocator` will be used to allocate the memory returned in `Fragment` if any.
     pub fn feed(self: *Self, fragment_allocator: *std.mem.Allocator, slice: []const u8) !Result {
         var offset: usize = 0;
-        while (offset < slice.len) : (offset += 1) {
+        main_loop: while (offset < slice.len) : (offset += 1) {
             if (slice[offset] == '\n') {
-                defer self.line_buffer.shrinkRetainingCapacity(0);
 
                 // When we are testing, we set the temporary line memory to '!' so we can recognize this in tests.
                 defer if (std.builtin.is_test) std.mem.set(u8, self.line_buffer.items, '!');
@@ -159,49 +214,159 @@ pub const Parser = struct {
                     line = line[0 .. line.len - 1];
                 }
 
-                switch (self.state) {
-                    .default => {
-                        var fragment: Fragment = if (std.mem.eql(u8, trimLine(line), ""))
-                            Fragment{ .empty = {} }
-                        else if (std.mem.startsWith(u8, line, "###"))
-                            Fragment{ .heading = Heading{ .level = .h3, .text = try dupeAndTrim(fragment_allocator, line[3..]) } }
-                        else if (std.mem.startsWith(u8, line, "##"))
-                            Fragment{ .heading = Heading{ .level = .h2, .text = try dupeAndTrim(fragment_allocator, line[2..]) } }
-                        else if (std.mem.startsWith(u8, line, "#"))
-                            Fragment{ .heading = Heading{ .level = .h1, .text = try dupeAndTrim(fragment_allocator, line[1..]) } }
-                        else if (std.mem.startsWith(u8, line, "=>")) blk: {
-                            const temp = trimLine(line[2..]);
+                if (std.mem.startsWith(u8, line, "*")) {
+                    switch (self.state) {
+                        .block_quote => {
+                            var res = Result{
+                                .consumed = offset, // one less so we will land here the next round again
+                                .fragment = try self.createBlockFragment(fragment_allocator, .block_quote),
+                            };
+                            self.state = .default;
+                            return res;
+                        },
+                        .preformatted => {
+                            var res = Result{
+                                .consumed = offset, // one less so we will land here the next round again
+                                .fragment = try self.createBlockFragment(fragment_allocator, .preformatted),
+                            };
+                            self.state = .default;
+                            return res;
+                        },
+                        .list, .default => {},
+                    }
 
-                            for (temp) |c, i| {
-                                const str = [_]u8{c};
-                                if (std.mem.indexOf(u8, legal_whitespace, &str) != null) {
-                                    break :blk Fragment{ .link = Link{
-                                        .href = try dupeAndTrim(fragment_allocator, trimLine(temp[0..i])),
-                                        .title = try dupeAndTrim(fragment_allocator, trimLine(temp[i + 1 ..])),
-                                    } };
-                                }
-                            } else {
-                                break :blk Fragment{ .link = Link{
-                                    .href = try dupeAndTrim(fragment_allocator, temp),
-                                    .title = null,
-                                } };
-                            }
-                        } else Fragment{ .paragraph = try dupeAndTrim(fragment_allocator, line) };
+                    if (self.state != .list)
+                        std.debug.assert(self.text_block_buffer.items.len == 0);
 
-                        return Result{
-                            .consumed = offset + 1,
-                            .fragment = fragment,
-                        };
-                    },
-                    .block_quote => @panic("TODO: block_quote implemented yet"),
-                    .preformatted => @panic("TODO: preformatted implemented yet"),
-                    .list => @panic("TODO: list implemented yet"),
+                    self.state = .list;
+
+                    const line_buffer = try self.allocator.dupe(u8, trimLine(line[1..]));
+                    errdefer self.allocator.free(line_buffer);
+
+                    try self.text_block_buffer.append(line_buffer);
+
+                    self.line_buffer.shrinkRetainingCapacity(0);
+
+                    continue :main_loop;
+                } else if (std.mem.startsWith(u8, line, ">")) {
+                    switch (self.state) {
+                        .list => {
+                            var res = Result{
+                                .consumed = offset, // one less so we will land here the next round again
+                                .fragment = try self.createBlockFragment(fragment_allocator, .list),
+                            };
+                            self.state = .default;
+                            return res;
+                        },
+                        .preformatted => {
+                            var res = Result{
+                                .consumed = offset, // one less so we will land here the next round again
+                                .fragment = try self.createBlockFragment(fragment_allocator, .preformatted),
+                            };
+                            self.state = .default;
+                            return res;
+                        },
+                        .block_quote, .default => {},
+                    }
+
+                    if (self.state != .block_quote)
+                        std.debug.assert(self.text_block_buffer.items.len == 0);
+
+                    self.state = .block_quote;
+
+                    const line_buffer = try self.allocator.dupe(u8, trimLine(line[1..]));
+                    errdefer self.allocator.free(line_buffer);
+
+                    try self.text_block_buffer.append(line_buffer);
+
+                    self.line_buffer.shrinkRetainingCapacity(0);
+
+                    continue :main_loop;
+                } else if (std.mem.startsWith(u8, line, "```")) {
+                    //
                 }
+
+                // If we get here, we are reading a line that is not in the block anymore, so
+                // we need to finalize and emit that block, then return that fragment
+
+                if (try self.createBlockFragmentFromStateAndResetState(fragment_allocator)) |fragment| {
+                    return Result{
+                        .consumed = offset, // one less so we will land here the next round again
+                        .fragment = fragment,
+                    };
+                }
+
+                // The defer must be after the processing of multi-line blocks, otherwise
+                // we lose the current line info.
+                defer self.line_buffer.shrinkRetainingCapacity(0);
+                std.debug.assert(self.state == .default);
+
+                var fragment: Fragment = if (std.mem.eql(u8, trimLine(line), ""))
+                    Fragment{ .empty = {} }
+                else if (std.mem.startsWith(u8, line, "###"))
+                    Fragment{ .heading = Heading{ .level = .h3, .text = try dupeAndTrim(fragment_allocator, line[3..]) } }
+                else if (std.mem.startsWith(u8, line, "##"))
+                    Fragment{ .heading = Heading{ .level = .h2, .text = try dupeAndTrim(fragment_allocator, line[2..]) } }
+                else if (std.mem.startsWith(u8, line, "#"))
+                    Fragment{ .heading = Heading{ .level = .h1, .text = try dupeAndTrim(fragment_allocator, line[1..]) } }
+                else if (std.mem.startsWith(u8, line, "=>")) blk: {
+                    const temp = trimLine(line[2..]);
+
+                    for (temp) |c, i| {
+                        const str = [_]u8{c};
+                        if (std.mem.indexOf(u8, legal_whitespace, &str) != null) {
+                            break :blk Fragment{ .link = Link{
+                                .href = try dupeAndTrim(fragment_allocator, trimLine(temp[0..i])),
+                                .title = try dupeAndTrim(fragment_allocator, trimLine(temp[i + 1 ..])),
+                            } };
+                        }
+                    } else {
+                        break :blk Fragment{ .link = Link{
+                            .href = try dupeAndTrim(fragment_allocator, temp),
+                            .title = null,
+                        } };
+                    }
+                } else Fragment{ .paragraph = try dupeAndTrim(fragment_allocator, line) };
+
+                return Result{
+                    .consumed = offset + 1,
+                    .fragment = fragment,
+                };
             } else {
                 try self.line_buffer.append(slice[offset]);
             }
         }
-        return Result{ .consumed = slice.len, .fragment = null };
+
+        return Result{
+            .consumed = slice.len,
+            .fragment = null,
+        };
+    }
+
+    /// Notifies the parser that we've reached the end of the document.
+    /// This funtion makes sure every block is terminated properly and returned
+    /// even if the last line is not terminated.
+    /// `fragment_allocator` will be used to allocate the memory returned in `Fragment` if any.
+    pub fn finalize(self: *Self, fragment_allocator: *std.mem.Allocator) !?Fragment {
+        // for default state and an empty line, we can be sure that there is nothing
+        // to be done. If the line is empty, but we're still in a block, we still have to terminate
+        // that block to be sure
+        if (self.state == .default and self.line_buffer.items.len == 0)
+            return null;
+
+        // feed a line end sequence to guaranteed termination of the current line.
+        // This will either finish a normal line or complete the current block.
+        var res = try self.feed(fragment_allocator, "\n");
+
+        // when we get a fragment, we ended a normal line
+        if (res.fragment != null)
+            return res.fragment.?;
+
+        // if not, we are currently parsing a block and must now convert the block
+        // into a fragment.
+        std.debug.assert(self.state != .default);
+        var frag_or_null = try self.createBlockFragmentFromStateAndResetState(fragment_allocator);
+        return frag_or_null orelse unreachable;
     }
 };
 
@@ -369,7 +534,15 @@ fn expectEqualLines(expected: TextLines, actual: TextLines) void {
     }
 }
 
-fn expectFragmentEqual(expected: Fragment, actual: Fragment) void {
+fn expectFragmentEqual(expected_opt: ?Fragment, actual_opt: ?Fragment) void {
+    if (expected_opt == null) {
+        std.testing.expect(actual_opt == null);
+        return;
+    }
+
+    const expected = expected_opt.?;
+    const actual = actual_opt.?;
+
     std.testing.expectEqual(@as(FragmentType, expected), @as(FragmentType, actual));
 
     switch (expected) {
@@ -394,7 +567,7 @@ fn expectFragmentEqual(expected: Fragment, actual: Fragment) void {
     }
 }
 
-fn testFragmentParsing(fragment: Fragment, text: []const u8) !void {
+fn testFragmentParsing(fragment: ?Fragment, text: []const u8) !void {
     // duplicate the passed in text to clear it later.
     const dupe_text = try std.testing.allocator.dupe(u8, text);
     defer std.testing.allocator.free(dupe_text);
@@ -402,6 +575,7 @@ fn testFragmentParsing(fragment: Fragment, text: []const u8) !void {
     var parser = Parser.init(std.testing.allocator);
     defer parser.deinit();
 
+    var got_fragment = false;
     var offset: usize = 0;
     while (offset < dupe_text.len) {
         var res = try parser.feed(std.testing.allocator, dupe_text[offset..]);
@@ -413,14 +587,42 @@ fn testFragmentParsing(fragment: Fragment, text: []const u8) !void {
             std.mem.set(u8, dupe_text, '?');
 
             expectFragmentEqual(fragment, frag.*);
+            got_fragment = true;
             break;
         }
     }
+
     std.testing.expectEqual(text.len, offset);
+
+    if (try parser.finalize(std.testing.allocator)) |*frag| {
+        defer frag.free(std.testing.allocator);
+        std.testing.expectEqual(false, got_fragment);
+
+        // Clear the input text to make sure we didn't accidently pass a reference to our input slice
+        std.mem.set(u8, dupe_text, '?');
+
+        expectFragmentEqual(fragment, frag.*);
+    } else {
+        if (fragment != null) {
+            std.testing.expectEqual(true, got_fragment);
+        } else {
+            std.testing.expectEqual(false, got_fragment);
+        }
+    }
+}
+
+test "parse incomplete fragment" {
+    var parser = Parser.init(std.testing.allocator);
+    defer parser.deinit();
+
+    std.testing.expectEqual(Parser.Result{ .consumed = 8, .fragment = null }, try parser.feed(std.testing.allocator, "12345678"));
+    std.testing.expectEqual(Parser.Result{ .consumed = 8, .fragment = null }, try parser.feed(std.testing.allocator, "12345678"));
+    std.testing.expectEqual(Parser.Result{ .consumed = 8, .fragment = null }, try parser.feed(std.testing.allocator, "12345678"));
+    std.testing.expectEqual(Parser.Result{ .consumed = 8, .fragment = null }, try parser.feed(std.testing.allocator, "12345678"));
 }
 
 test "parse empty line" {
-    try testFragmentParsing(Fragment{ .empty = {} }, "");
+    try testFragmentParsing(null, "");
     try testFragmentParsing(Fragment{ .empty = {} }, "\r\n");
 }
 
@@ -492,4 +694,68 @@ test "parse link (with title)" {
     try testFragmentParsing(fragment, "=>gemini://circumlunar.space/            This is a link!      \r\n");
     try testFragmentParsing(fragment, "=> gemini://circumlunar.space/            This is a link!      ");
     try testFragmentParsing(fragment, "=> gemini://circumlunar.space/            This is a link!      \r\n");
+}
+
+test "parse list block" {
+    const list_0 = Fragment{
+        .list = TextLines{
+            .lines = &[_][]const u8{
+                "item 0",
+            },
+        },
+    };
+
+    const list_3 = Fragment{
+        .list = TextLines{
+            .lines = &[_][]const u8{
+                "item 1",
+                "item 2",
+                "item 3",
+            },
+        },
+    };
+
+    try testFragmentParsing(list_0, "*item 0");
+    try testFragmentParsing(list_0, "*item 0\r\n");
+    try testFragmentParsing(list_0, "* item 0");
+    try testFragmentParsing(list_0, "* item 0\r\n");
+    try testFragmentParsing(list_0, "*item 0     ");
+    try testFragmentParsing(list_0, "*item 0     \r\n");
+    try testFragmentParsing(list_0, "*    item 0     ");
+    try testFragmentParsing(list_0, "*    item 0     \r\n");
+
+    try testFragmentParsing(list_3, "*item 1\r\n*item 2\r\n*item 3");
+    try testFragmentParsing(list_3, "*item 1\r\n*item 2\r\n*item 3\r\n");
+}
+
+test "parse quote block" {
+    const quote_0 = Fragment{
+        .quote = TextLines{
+            .lines = &[_][]const u8{
+                "item 0",
+            },
+        },
+    };
+
+    const quote_3 = Fragment{
+        .quote = TextLines{
+            .lines = &[_][]const u8{
+                "item 1",
+                "item 2",
+                "item 3",
+            },
+        },
+    };
+
+    try testFragmentParsing(quote_0, ">item 0");
+    try testFragmentParsing(quote_0, ">item 0\r\n");
+    try testFragmentParsing(quote_0, "> item 0");
+    try testFragmentParsing(quote_0, "> item 0\r\n");
+    try testFragmentParsing(quote_0, ">item 0     ");
+    try testFragmentParsing(quote_0, ">item 0     \r\n");
+    try testFragmentParsing(quote_0, ">    item 0     ");
+    try testFragmentParsing(quote_0, ">    item 0     \r\n");
+
+    try testFragmentParsing(quote_3, ">item 1\r\n>item 2\r\n>item 3");
+    try testFragmentParsing(quote_3, ">item 1\r\n>item 2\r\n>item 3\r\n");
 }
