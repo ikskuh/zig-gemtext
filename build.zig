@@ -27,7 +27,7 @@ pub fn build(b: *std.build.Builder) void {
     main_tests.setBuildMode(mode);
 
     var lib_tests = b.addTest("src/lib.zig");
-    lib_tests.linkLibrary(lib);
+    //lib_tests.linkLibrary(lib);
     lib_tests.linkLibC();
     lib_tests.addIncludeDir("include");
     lib_tests.setBuildMode(mode);

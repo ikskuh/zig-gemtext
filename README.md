@@ -15,6 +15,7 @@ The library is thoroughly tested with a lot of gemini text edge cases and all (t
   - Gemini text
   - HTML
   - Markdown
+  - RTF
 
 ## Example
 

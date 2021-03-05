@@ -42,7 +42,7 @@ test "render preformatted text (no alt text)" {
             .preformatted = Preformatted{
                 .alt_text = null,
                 .text = TextLines{
-                    .lines = &[_][]const u8{
+                    .lines = &[_][:0]const u8{
                         "int main() {",
                         "    return 0;",
                         "}",
@@ -59,7 +59,7 @@ test "render preformatted text (with alt text)" {
             .preformatted = Preformatted{
                 .alt_text = "c",
                 .text = TextLines{
-                    .lines = &[_][]const u8{
+                    .lines = &[_][:0]const u8{
                         "int main() {",
                         "    return 0;",
                         "}",
@@ -73,7 +73,7 @@ test "render preformatted text (with alt text)" {
 test "render quote text lines" {
     try testDocumentRendering("> Two things are infinite: the universe and human stupidity; and I'm not sure about the universe.\r\n> - Albert Einstein\r\n", &[_]Fragment{
         Fragment{ .quote = TextLines{
-            .lines = &[_][]const u8{
+            .lines = &[_][:0]const u8{
                 "Two things are infinite: the universe and human stupidity; and I'm not sure about the universe.",
                 "- Albert Einstein",
             },
@@ -282,7 +282,7 @@ test "parse link (with title)" {
 test "parse list block" {
     const list_0 = Fragment{
         .list = TextLines{
-            .lines = &[_][]const u8{
+            .lines = &[_][:0]const u8{
                 "item 0",
             },
         },
@@ -290,7 +290,7 @@ test "parse list block" {
 
     const list_3 = Fragment{
         .list = TextLines{
-            .lines = &[_][]const u8{
+            .lines = &[_][:0]const u8{
                 "item 1",
                 "item 2",
                 "item 3",
@@ -310,7 +310,7 @@ test "parse list block" {
 test "parse quote block" {
     const quote_0 = Fragment{
         .quote = TextLines{
-            .lines = &[_][]const u8{
+            .lines = &[_][:0]const u8{
                 "item 0",
             },
         },
@@ -318,7 +318,7 @@ test "parse quote block" {
 
     const quote_3 = Fragment{
         .quote = TextLines{
-            .lines = &[_][]const u8{
+            .lines = &[_][:0]const u8{
                 "item 1",
                 "item 2",
                 "item 3",
@@ -344,7 +344,7 @@ test "parse preformatted blocks (no alt text)" {
         .preformatted = Preformatted{
             .alt_text = null,
             .text = TextLines{
-                .lines = &[_][]const u8{},
+                .lines = &[_][:0]const u8{},
             },
         },
     };
@@ -353,7 +353,7 @@ test "parse preformatted blocks (no alt text)" {
         .preformatted = Preformatted{
             .alt_text = null,
             .text = TextLines{
-                .lines = &[_][]const u8{
+                .lines = &[_][:0]const u8{
                     " hello world ",
                 },
             },
@@ -364,7 +364,7 @@ test "parse preformatted blocks (no alt text)" {
         .preformatted = Preformatted{
             .alt_text = null,
             .text = TextLines{
-                .lines = &[_][]const u8{
+                .lines = &[_][:0]const u8{
                     "int main() {",
                     "    return 0;",
                     "}",
@@ -391,7 +391,7 @@ test "parse preformatted blocks (with alt text)" {
         .preformatted = Preformatted{
             .alt_text = "alt",
             .text = TextLines{
-                .lines = &[_][]const u8{},
+                .lines = &[_][:0]const u8{},
             },
         },
     };
@@ -400,7 +400,7 @@ test "parse preformatted blocks (with alt text)" {
         .preformatted = Preformatted{
             .alt_text = "alt",
             .text = TextLines{
-                .lines = &[_][]const u8{
+                .lines = &[_][:0]const u8{
                     " hello world ",
                 },
             },
@@ -411,7 +411,7 @@ test "parse preformatted blocks (with alt text)" {
         .preformatted = Preformatted{
             .alt_text = "alt",
             .text = TextLines{
-                .lines = &[_][]const u8{
+                .lines = &[_][:0]const u8{
                     "int main() {",
                     "    return 0;",
                     "}",
@@ -503,7 +503,7 @@ test "basic sequence parsing" {
         &[_]Fragment{
             Fragment{ .heading = Heading{ .level = .h1, .text = "Heading" } },
             Fragment{ .paragraph = "This is a bullet list:" },
-            Fragment{ .list = TextLines{ .lines = &[_][]const u8{
+            Fragment{ .list = TextLines{ .lines = &[_][:0]const u8{
                 "Tortillias",
                 "Cheese Dip",
                 "Spicy Dip",
@@ -535,7 +535,7 @@ test "sequenc hand over between block types" {
     const fragment_src = [3]Fragment{
         Fragment{
             .quote = TextLines{
-                .lines = &[_][]const u8{
+                .lines = &[_][:0]const u8{
                     "ein",
                     "stein",
                     "said",
@@ -546,7 +546,7 @@ test "sequenc hand over between block types" {
             .preformatted = Preformatted{
                 .alt_text = null,
                 .text = TextLines{
-                    .lines = &[_][]const u8{
+                    .lines = &[_][:0]const u8{
                         "int main() {",
                         "    return 0;",
                         "}",
@@ -556,7 +556,7 @@ test "sequenc hand over between block types" {
         },
         Fragment{
             .list = TextLines{
-                .lines = &[_][]const u8{
+                .lines = &[_][:0]const u8{
                     "philly",
                     "cheese",
                     "steak",
@@ -614,9 +614,9 @@ test "Parse examples from the spec" {
     defer document.deinit();
 }
 
-fn terminateWithCrLf(comptime input_literal: []const u8) []const u8 {
+fn terminateWithCrLf(comptime input_literal: [:0]const u8) [:0]const u8 {
     @setEvalBranchQuota(20 * input_literal.len);
-    comptime var result: []const u8 = "";
+    comptime var result: [:0]const u8 = "";
     comptime var iter = std.mem.split(input_literal, "\n");
     inline while (comptime iter.next()) |line| {
         result = result ++ line ++ "\r\n";

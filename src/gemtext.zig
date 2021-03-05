@@ -18,7 +18,7 @@ pub const Fragment = union(enum) {
     const Self = @This();
 
     empty,
-    paragraph: []const u8,
+    paragraph: [:0]const u8,
     preformatted: Preformatted,
     quote: TextLines,
     link: Link,
@@ -56,7 +56,7 @@ fn freeTextLines(lines: *TextLines, allocator: *std.mem.Allocator) void {
 
 /// A grouped set of lines that appear in the same kind of formatting.
 pub const TextLines = struct {
-    lines: []const []const u8,
+    lines: []const [:0]const u8,
 };
 
 pub const Level = enum {
@@ -67,17 +67,17 @@ pub const Level = enum {
 
 pub const Heading = struct {
     level: Level,
-    text: []const u8,
+    text: [:0]const u8,
 };
 
 pub const Preformatted = struct {
-    alt_text: ?[]const u8,
+    alt_text: ?[:0]const u8,
     text: TextLines,
 };
 
 pub const Link = struct {
-    href: []const u8,
-    title: ?[]const u8,
+    href: [:0]const u8,
+    title: ?[:0]const u8,
 };
 
 /// A gemini text document
@@ -151,8 +151,8 @@ fn trimLine(input: []const u8) []const u8 {
     return std.mem.trim(u8, input, legal_whitespace);
 }
 
-fn dupeAndTrim(allocator: *std.mem.Allocator, input: []const u8) ![]u8 {
-    return try allocator.dupe(
+fn dupeAndTrim(allocator: *std.mem.Allocator, input: []const u8) ![:0]u8 {
+    return try allocator.dupeZ(
         u8,
         trimLine(input),
     );
@@ -161,6 +161,14 @@ fn dupeAndTrim(allocator: *std.mem.Allocator, input: []const u8) ![]u8 {
 /// A gemtext asynchronous push parser that will be non-blocking.
 pub const Parser = struct {
     const Self = @This();
+
+    comptime {
+        if (@sizeOf(@This()) > 128)
+            @compileError("Please adjust the limit here and include/gemtext.h to use the new parser size!");
+
+        if (@alignOf(@This()) > 16)
+            @compileError("Please adjust the limit here and include/gemtext.h to use the new parser alignment!");
+    }
 
     const State = enum {
         default,
@@ -422,21 +430,21 @@ pub const Parser = struct {
 
     const BlockType = enum { preformatted, block_quote, list };
     fn createBlockFragment(self: *Self, fragment_allocator: *std.mem.Allocator, fragment_type: BlockType) !Fragment {
-        var alt_text: ?[]const u8 = if (fragment_type == .preformatted) blk: {
+        var alt_text: ?[:0]const u8 = if (fragment_type == .preformatted) blk: {
             std.debug.assert(self.text_block_buffer.items.len > 0);
 
             const src_alt_text = self.text_block_buffer.orderedRemove(0);
             defer self.allocator.free(src_alt_text);
 
             break :blk if (!std.mem.eql(u8, src_alt_text, ""))
-                try fragment_allocator.dupe(u8, src_alt_text)
+                try fragment_allocator.dupeZ(u8, src_alt_text)
             else
                 null;
         } else null;
         errdefer if (alt_text) |text|
             fragment_allocator.free(text);
 
-        var lines = try fragment_allocator.alloc([]const u8, self.text_block_buffer.items.len);
+        var lines = try fragment_allocator.alloc([:0]const u8, self.text_block_buffer.items.len);
         errdefer fragment_allocator.free(lines);
 
         var offset: usize = 0;
@@ -446,7 +454,7 @@ pub const Parser = struct {
         };
 
         while (offset < lines.len) : (offset += 1) {
-            lines[offset] = try fragment_allocator.dupe(u8, self.text_block_buffer.items[offset]);
+            lines[offset] = try fragment_allocator.dupeZ(u8, self.text_block_buffer.items[offset]);
         }
 
         for (self.text_block_buffer.items) |item| {

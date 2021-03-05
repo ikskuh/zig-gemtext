@@ -2,12 +2,14 @@
 #define _GEMTEXT_H_
 
 #include <stddef.h>
+#include <stdalign.h>
 
 enum gemtext_error
 {
   GEMTEXT_SUCCESS = 0,
-  GEMTEXT_ERR_OUT_OF_MEMORY = 1,
-  GEMTEXT_ERR_OUT_OF_BOUNDS = 2,
+  GEMTEXT_SUCCESS_FRAGMENT = 1,
+  GEMTEXT_ERR_OUT_OF_MEMORY = -1,
+  GEMTEXT_ERR_OUT_OF_BOUNDS = -2,
 };
 
 enum gemtext_fragment_type
@@ -48,7 +50,7 @@ struct gemtext_link
 
 struct gemtext_heading
 {
-  char const *title;
+  char const *text;
   enum gemtext_heading_level level;
 };
 
@@ -72,6 +74,12 @@ struct gemtext_document
   struct gemtext_fragment const *fragments;
 };
 
+struct gemtext_parser
+{
+  // KEEP THIS IN SYNC WITH THE ASSERT IN src/gemtext.zig:Parser!
+  alignas(16) char opaque[128];
+};
+
 /// Initializes the `document`.
 enum gemtext_error gemtextDocumentCreate(struct gemtext_document *document);
 
@@ -86,5 +94,40 @@ void gemtextDocumentRemove(struct gemtext_document *document, size_t index);
 
 /// Destroys the `document` and all contained resources.
 void gemtextDocumentDestroy(struct gemtext_document *document);
+
+/// Initializes `parser`.
+enum gemtext_error gemtextParserCreate(struct gemtext_parser *parser);
+
+/// Destroys `parser` and all contained resources.
+void gemtextParserDestroy(struct gemtext_parser *parser);
+
+/// Feeds a sequence of `bytes` into the parser and returns
+/// the number of `consumed_bytes` to the caller. This sequence is `total_bytes` long.
+/// If a `fragment` was parsed, returns `GEMTEXT_SUCCESS_FRAGMENT`
+/// and the variable `fragment` was initialized by the parser to a valid value.
+/// If `consumed_bytes` is less than `total_bytes`, the parser has not consumed
+/// all bytes in the input sequence and the caller should process the returned fragment,
+/// then feed the rest of the bytes into the parser.
+/// If a `fragment` was returned, it must be freed with `gemtextParserDestroyFragment`.
+enum gemtext_error gemtextParserFeed(
+    struct gemtext_parser *parser,
+    struct gemtext_fragment *fragment,
+    size_t *consumed_bytes,
+    size_t total_bytes,
+    char const *bytes);
+
+/// Tells the parser that we finished the current file and will flush all internal
+/// buffers.
+/// If `GEMTEXT_SUCCESS_FRAGMENT` is returned, `fragment` will be valid and must be
+/// freed with `gemtextParserDestroyFragment`.
+enum gemtext_error gemtextParserFinalize(
+    struct gemtext_parser *parser,
+    struct gemtext_fragment *fragment);
+
+/// Destroys a `fragment` returned by `gemtextParserFeed()` or `gemtextParserFinalize()`. `parser` is the
+/// associated parser that was passed into `gemtextParserFeed()` or `gemtextParserFinalize()`.
+void gemtextParserDestroyFragment(
+    struct gemtext_parser *parser,
+    struct gemtext_fragment *fragment);
 
 #endif // _GEMTEXT_H_
