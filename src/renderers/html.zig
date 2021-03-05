@@ -7,7 +7,29 @@ fn fmtHtmlText(
     options: std.fmt.FormatOptions,
     writer: anytype,
 ) !void {
-    try writer.writeAll(data); // don't do any entity escaping (yet)
+    const illegal = "<>&\"\'";
+
+    const replacement = [_][]const u8{
+        "&lt;",
+        "&gt;",
+        "&amp;",
+        "&quot;",
+        "&apos;",
+    };
+
+    var last_offset: usize = 0;
+    for (data) |c, index| {
+        if (std.mem.indexOf(u8, illegal, &[1]u8{c})) |i| {
+            if (index > last_offset) {
+                try writer.writeAll(data[last_offset..index]);
+            }
+            last_offset = index + 1;
+            try writer.writeAll(replacement[i]);
+        }
+    }
+    if (data.len > last_offset) {
+        try writer.writeAll(data[last_offset..]);
+    }
 }
 
 fn fmtHtml(slice: []const u8) std.fmt.Formatter(fmtHtmlText) {
