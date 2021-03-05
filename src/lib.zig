@@ -46,24 +46,97 @@ fn freeString(src: [*:0]const u8) void {
     allocator.free(std.mem.spanZ(@intToPtr([*:0]u8, @ptrToInt(src))));
 }
 
+fn dupeLines(src_lines: c.gemtext_lines) !c.gemtext_lines {
+    const lines = try allocator.alloc([*c]const u8, src_lines.count);
+    errdefer allocator.free(lines);
+
+    var offset: usize = 0;
+    errdefer for (lines[0..offset]) |line|
+        allocator.free(std.mem.spanZ(line));
+
+    while (offset < lines.len) : (offset += 1) {
+        lines[offset] = (try allocator.dupeZ(u8, std.mem.spanZ(src_lines.lines[offset]))).ptr;
+    }
+    return c.gemtext_lines{
+        .count = lines.len,
+        .lines = lines.ptr,
+    };
+}
+
 fn duplicateFragment(src: c.gemtext_fragment) !c.gemtext_fragment {
-    switch (src.type) {
+    return switch (src.type) {
         .GEMTEXT_FRAGMENT_EMPTY => return src,
-        .GEMTEXT_FRAGMENT_PARAGRAPH => {
-            return c.gemtext_fragment{
-                .type = .GEMTEXT_FRAGMENT_PARAGRAPH,
+        .GEMTEXT_FRAGMENT_PARAGRAPH => c.gemtext_fragment{
+            .type = .GEMTEXT_FRAGMENT_PARAGRAPH,
+            .unnamed_0 = .{
+                .paragraph = try dupeString(src.unnamed_0.paragraph),
+            },
+        },
+        .GEMTEXT_FRAGMENT_PREFORMATTED => blk: {
+            var container = c.gemtext_fragment{
+                .type = .GEMTEXT_FRAGMENT_PREFORMATTED,
                 .unnamed_0 = .{
-                    .paragraph = try dupeString(src.unnamed_0.paragraph),
+                    .preformatted = .{
+                        .lines = undefined,
+                        .alt_text = undefined,
+                    },
                 },
             };
+
+            container.unnamed_0.preformatted.lines = try dupeLines(src.unnamed_0.preformatted.lines);
+            errdefer destroyLines(&container.unnamed_0.preformatted.lines);
+
+            container.unnamed_0.preformatted.alt_text = if (src.unnamed_0.preformatted.alt_text) |alt_text|
+                try dupeString(alt_text)
+            else
+                null;
+
+            break :blk container;
         },
-        .GEMTEXT_FRAGMENT_PREFORMATTED => unreachable,
-        .GEMTEXT_FRAGMENT_QUOTE => unreachable,
-        .GEMTEXT_FRAGMENT_LINK => unreachable,
-        .GEMTEXT_FRAGMENT_LIST => unreachable,
-        .GEMTEXT_FRAGMENT_HEADING => unreachable,
+        .GEMTEXT_FRAGMENT_QUOTE => c.gemtext_fragment{
+            .type = .GEMTEXT_FRAGMENT_QUOTE,
+            .unnamed_0 = .{
+                .quote = try dupeLines(src.unnamed_0.quote),
+            },
+        },
+        .GEMTEXT_FRAGMENT_LINK => blk: {
+            var container = c.gemtext_fragment{
+                .type = .GEMTEXT_FRAGMENT_LINK,
+                .unnamed_0 = .{
+                    .link = .{
+                        .href = undefined,
+                        .title = undefined,
+                    },
+                },
+            };
+
+            container.unnamed_0.link.href = try dupeString(src.unnamed_0.link.href);
+            errdefer freeString(container.unnamed_0.link.href);
+
+            container.unnamed_0.link.title = if (src.unnamed_0.link.title) |title|
+                try dupeString(title)
+            else
+                null;
+
+            break :blk container;
+        },
+        .GEMTEXT_FRAGMENT_LIST => c.gemtext_fragment{
+            .type = .GEMTEXT_FRAGMENT_LIST,
+            .unnamed_0 = .{
+                .list = try dupeLines(src.unnamed_0.list),
+            },
+        },
+        .GEMTEXT_FRAGMENT_HEADING => c.gemtext_fragment{
+            .type = .GEMTEXT_FRAGMENT_PARAGRAPH,
+            .unnamed_0 = .{
+                .heading = .{
+                    .level = src.unnamed_0.heading.level,
+                    .text = try dupeString(src.unnamed_0.paragraph),
+                },
+            },
+        },
         else => @panic("Passed an invalid fragment to gemtext!"),
-    }
+    };
 }
 
 fn destroyLines(src_lines: *c.gemtext_lines) void {
@@ -107,6 +180,20 @@ export fn gemtextDocumentCreate(document: *c.gemtext_document) c.gemtext_error {
     setFragments(document, allocator.alloc(c.gemtext_fragment, 0) catch |e| return errorToC(e));
 
     return .GEMTEXT_SUCCESS;
+}
+
+fn debugPrintFragment(comptime header: []const u8, fragment: c.gemtext_fragment) void {
+    std.debug.print(header, .{});
+    switch (fragment.type) {
+        .GEMTEXT_FRAGMENT_EMPTY => std.debug.print(" GEMTEXT_FRAGMENT_EMPTY\n", .{}),
+        .GEMTEXT_FRAGMENT_PARAGRAPH => std.debug.print(" GEMTEXT_FRAGMENT_PARAGRAPH => {s}\n", .{fragment.unnamed_0.paragraph}),
+        .GEMTEXT_FRAGMENT_PREFORMATTED => std.debug.print(" GEMTEXT_FRAGMENT_PREFORMATTED => {}\n", .{fragment.unnamed_0.preformatted}),
+        .GEMTEXT_FRAGMENT_QUOTE => std.debug.print(" GEMTEXT_FRAGMENT_QUOTE => {}\n", .{fragment.unnamed_0.quote}),
+        .GEMTEXT_FRAGMENT_LINK => std.debug.print(" GEMTEXT_FRAGMENT_LINK => {}\n", .{fragment.unnamed_0.link}),
+        .GEMTEXT_FRAGMENT_LIST => std.debug.print(" GEMTEXT_FRAGMENT_LIST => {}\n", .{fragment.unnamed_0.list}),
+        .GEMTEXT_FRAGMENT_HEADING => std.debug.print(" GEMTEXT_FRAGMENT_HEADING => {}\n", .{fragment.unnamed_0.heading}),
+        else => unreachable,
+    }
 }
 
 export fn gemtextDocumentInsert(document: *c.gemtext_document, index: usize, fragment: *const c.gemtext_fragment) c.gemtext_error {
@@ -385,11 +472,15 @@ test "empty parser creation/deletion" {
     c.gemtextParserDestroy(&parser);
 }
 
-test "basic parser invocation" {
+test "basic parser invocation and document building" {
     var parser: c.gemtext_parser = undefined;
+    var document: c.gemtext_document = undefined;
 
     std.testing.expectEqual(c.gemtext_error.GEMTEXT_SUCCESS, c.gemtextParserCreate(&parser));
     defer c.gemtextParserDestroy(&parser);
+
+    std.testing.expectEqual(c.gemtext_error.GEMTEXT_SUCCESS, c.gemtextDocumentCreate(&document));
+    defer c.gemtextDocumentDestroy(&document);
 
     const document_text: []const u8 = @embedFile("../test-data/features.gemini");
 
@@ -412,6 +503,8 @@ test "basic parser invocation" {
         offset += parsed_len;
 
         if (result == .GEMTEXT_SUCCESS_FRAGMENT) {
+            std.testing.expectEqual(c.gemtext_error.GEMTEXT_SUCCESS, c.gemtextDocumentAppend(&document, &fragment));
+
             c.gemtextParserDestroyFragment(&parser, &fragment);
         }
     }
@@ -419,6 +512,7 @@ test "basic parser invocation" {
         var result = c.gemtextParserFinalize(&parser, &fragment);
         std.testing.expect(result == .GEMTEXT_SUCCESS or result == .GEMTEXT_SUCCESS_FRAGMENT);
         if (result == .GEMTEXT_SUCCESS_FRAGMENT) {
+            std.testing.expectEqual(c.gemtext_error.GEMTEXT_SUCCESS, c.gemtextDocumentAppend(&document, &fragment));
             c.gemtextParserDestroyFragment(&parser, &fragment);
         }
     }
