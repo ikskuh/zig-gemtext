@@ -6,9 +6,18 @@
 
 enum gemtext_error
 {
+  /// The operation was successful.
   GEMTEXT_SUCCESS = 0,
+
+  /// The same as `GEMTEXT_SUCCESS`, but indicates that the `fragment` variable
+  /// was initialized.
+  /// Only valid for `gemtextParserFeed` and `gemtextParserFinalize`.
   GEMTEXT_SUCCESS_FRAGMENT = 1,
+
+  /// The operation failed due to a lack of memory.
   GEMTEXT_ERR_OUT_OF_MEMORY = -1,
+
+  /// The operation failed as a given index was out of bounds.
   GEMTEXT_ERR_OUT_OF_BOUNDS = -2,
 };
 
@@ -26,8 +35,8 @@ enum gemtext_fragment_type
 enum gemtext_heading_level
 {
   GEMTEXT_HEADING_H1 = 1,
-  GEMTEXT_HEADING_H2 = 1,
-  GEMTEXT_HEADING_H3 = 1,
+  GEMTEXT_HEADING_H2 = 2,
+  GEMTEXT_HEADING_H3 = 3,
 };
 
 struct gemtext_lines
