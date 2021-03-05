@@ -1,3 +1,7 @@
+//! This example implements a AST based parsing which
+//! first reads in the whole file into a document, then
+//! renders the parsed document again.
+
 const std = @import("std");
 const gemtext = @import("gemtext");
 

@@ -517,26 +517,144 @@ export fn gemtextRender(
         .context = context,
         .render = render,
     };
+    if (fragment_count == 0)
+        return .GEMTEXT_SUCCESS;
 
-    var fragments = allocator.alloc(gemini.Fragment, fragment_count) catch |e| return errorToC(e);
-    defer allocator.free(fragments);
+    for (raw_fragments[0..fragment_count]) |raw_fragment| {
+        var fragment = convertFragmentToZig(raw_fragment) catch |e| return errorToC(e);
+        defer fragment.free(allocator);
+
+        const fragments = &[_]gemini.Fragment{fragment};
+
+        switch (renderer) {
+            .GEMTEXT_RENDER_GEMTEXT => gemini.renderer.gemtext(fragments, stream.writer()) catch unreachable,
+            .GEMTEXT_RENDER_HTML => gemini.renderer.html(fragments, stream.writer()) catch unreachable,
+            .GEMTEXT_RENDER_MARKDOWN => gemini.renderer.markdown(fragments, stream.writer()) catch unreachable,
+            .GEMTEXT_RENDER_RTF => gemini.renderer.rtf(fragments, stream.writer()) catch unreachable,
+            else => @panic("invalid renderer passed to gemtextRender!"),
+        }
+    }
+
+    return .GEMTEXT_SUCCESS;
+}
+
+export fn gemtextDocumentParseString(document: *c.gemtext_document, raw_text: [*]const u8, length: usize) c.gemtext_error {
+    var err: c.gemtext_error = undefined;
+
+    err = c.gemtextDocumentCreate(document);
+    if (err != .GEMTEXT_SUCCESS)
+        return err;
+
+    var success = false; // cheap workaround for errdefer
+    defer if (!success) {
+        c.gemtextDocumentDestroy(document);
+    };
+
+    var parser: c.gemtext_parser = undefined;
+    err = c.gemtextParserCreate(&parser);
+    if (err != .GEMTEXT_SUCCESS)
+        return err;
+    defer c.gemtextParserDestroy(&parser);
+
+    var fragment: c.gemtext_fragment = undefined;
 
     var offset: usize = 0;
+    while (offset < length) {
+        var used: usize = undefined;
 
-    defer for (fragments[0..offset]) |*frag|
-        frag.free(allocator);
+        err = c.gemtextParserFeed(
+            &parser,
+            &fragment,
+            &used,
+            length - offset,
+            raw_text + offset,
+        );
 
-    while (offset < fragments.len) : (offset += 1) {
-        fragments[offset] = convertFragmentToZig(raw_fragments[offset]) catch |e| return errorToC(e);
+        if (err == .GEMTEXT_SUCCESS_FRAGMENT) {
+            defer c.gemtextParserDestroyFragment(&parser, &fragment);
+            err = c.gemtextDocumentAppend(document, &fragment);
+            if (err != .GEMTEXT_SUCCESS)
+                return err;
+        } else if (err != .GEMTEXT_SUCCESS) {
+            return err;
+        }
+        offset += used;
     }
 
-    switch (renderer) {
-        .GEMTEXT_RENDER_GEMTEXT => gemini.renderer.gemtext(fragments, stream.writer()) catch unreachable,
-        .GEMTEXT_RENDER_HTML => gemini.renderer.html(fragments, stream.writer()) catch unreachable,
-        .GEMTEXT_RENDER_MARKDOWN => gemini.renderer.markdown(fragments, stream.writer()) catch unreachable,
-        .GEMTEXT_RENDER_RTF => gemini.renderer.rtf(fragments, stream.writer()) catch unreachable,
-        else => @panic("invalid renderer passed to gemtextRender!"),
+    err = c.gemtextParserFinalize(&parser, &fragment);
+    if (err == .GEMTEXT_SUCCESS_FRAGMENT) {
+        defer c.gemtextParserDestroyFragment(&parser, &fragment);
+        err = c.gemtextDocumentAppend(document, &fragment);
+        if (err != .GEMTEXT_SUCCESS)
+            return err;
+    } else if (err != .GEMTEXT_SUCCESS)
+        return err;
+
+    success = true; // prevent defer-killing "document"
+
+    return .GEMTEXT_SUCCESS;
+}
+
+export fn gemtextDocumentParseFile(document: *c.gemtext_document, file: *std.c.FILE) c.gemtext_error {
+    var err: c.gemtext_error = undefined;
+
+    err = c.gemtextDocumentCreate(document);
+    if (err != .GEMTEXT_SUCCESS)
+        return err;
+
+    var success = false; // cheap workaround for errdefer
+    defer if (!success) {
+        c.gemtextDocumentDestroy(document);
+    };
+
+    var parser: c.gemtext_parser = undefined;
+    err = c.gemtextParserCreate(&parser);
+    if (err != .GEMTEXT_SUCCESS)
+        return err;
+    defer c.gemtextParserDestroy(&parser);
+
+    var fragment: c.gemtext_fragment = undefined;
+
+    while (true) {
+        var buffer: [8192]u8 = undefined;
+        const len = std.c.fread(&buffer, 1, buffer.len, file);
+        if (len == 0)
+            break;
+
+        var offset: usize = 0;
+        while (offset < len) {
+            var used: usize = undefined;
+
+            err = c.gemtextParserFeed(
+                &parser,
+                &fragment,
+                &used,
+                len - offset,
+                @as([*]const u8, &buffer) + offset,
+            );
+
+            if (err == .GEMTEXT_SUCCESS_FRAGMENT) {
+                defer c.gemtextParserDestroyFragment(&parser, &fragment);
+                err = c.gemtextDocumentAppend(document, &fragment);
+                if (err != .GEMTEXT_SUCCESS)
+                    return err;
+            } else if (err != .GEMTEXT_SUCCESS) {
+                return err;
+            }
+            offset += used;
+        }
     }
+
+    err = c.gemtextParserFinalize(&parser, &fragment);
+    if (err == .GEMTEXT_SUCCESS_FRAGMENT) {
+        defer c.gemtextParserDestroyFragment(&parser, &fragment);
+        err = c.gemtextDocumentAppend(document, &fragment);
+        if (err != .GEMTEXT_SUCCESS)
+            return err;
+    } else if (err != .GEMTEXT_SUCCESS)
+        return err;
+
+    success = true; // prevent defer-killing "document"
 
     return .GEMTEXT_SUCCESS;
 }

@@ -10,6 +10,7 @@ const pkgs = struct {
 const example_list = [_][]const u8{
     "gem2html",
     "gem2md",
+    "streaming-parser",
 };
 
 pub fn build(b: *std.build.Builder) void {
@@ -39,12 +40,29 @@ pub fn build(b: *std.build.Builder) void {
     const examples = b.step("examples", "Builds all examples");
 
     inline for (example_list) |example_name| {
-        const example = b.addExecutable(example_name, "examples/" ++ example_name ++ ".zig");
+        {
+            const example = b.addExecutable(example_name ++ "-zig", "examples/" ++ example_name ++ ".zig");
 
-        example.setBuildMode(mode);
-        example.setTarget(target);
-        example.addPackage(pkgs.gemtext);
+            example.setBuildMode(mode);
+            example.setTarget(target);
+            example.addPackage(pkgs.gemtext);
 
-        examples.dependOn(&b.addInstallArtifact(example).step);
+            examples.dependOn(&b.addInstallArtifact(example).step);
+        }
+        {
+            const example = b.addExecutable(example_name ++ "-c", null);
+            example.addCSourceFile("examples/" ++ example_name ++ ".c", &[_][]const u8{
+                "-std=c11",
+                "-Weverything",
+            });
+
+            example.linkLibrary(lib);
+            example.addIncludeDir("include");
+            example.setBuildMode(mode);
+            example.setTarget(target);
+            example.linkLibC();
+
+            examples.dependOn(&b.addInstallArtifact(example).step);
+        }
     }
 }

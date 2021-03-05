@@ -1,8 +1,9 @@
-#ifndef _GEMTEXT_H_
-#define _GEMTEXT_H_
+#ifndef GEMTEXT_H
+#define GEMTEXT_H
 
 #include <stddef.h>
 #include <stdalign.h>
+#include <stdio.h>
 
 enum gemtext_error
 {
@@ -165,4 +166,17 @@ enum gemtext_error gemtextRender(
     void *context,
     void (*render)(void *context, char const *bytes, size_t length));
 
-#endif // _GEMTEXT_H_
+/// Parses a string into a `gemtext_document` and will return that `document`
+/// on success.
+enum gemtext_error gemtextDocumentParseString(
+    struct gemtext_document *document,
+    char const *text,
+    size_t length);
+
+/// Parses a file stream into a `gemtext_document` and will return that `document`
+/// on success.
+enum gemtext_error gemtextDocumentParseFile(
+    struct gemtext_document *document,
+    FILE *file);
+
+#endif // GEMTEXT_H
