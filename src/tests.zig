@@ -740,3 +740,30 @@ test "render markdown" {
 
     try testDocumentFormatter(document_markdown, "markdown");
 }
+
+test "render rtf" {
+    const document_rtf = terminateWithCrLf(
+        \\{\rtf1\ansi{\fonttbl{\f0\fswiss}{\f1\fmodern Courier New{\*\falt Monospace};}}
+        \\{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs36 Introduction\par}
+        \\{\pard \ql \f0 \sa180 \li0 \fi0 This is a basic text line\par}
+        \\{\pard \ql \f0 \sa180 \li0 \fi0 And this is another one\par}
+        \\{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab And we can also do\par}
+        \\{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab some nice\par}
+        \\{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab lists\sa180\par}
+        \\{\pard \ql \f0 \sa180 \li0 \fi0 \par}
+        \\{\pard \ql \f0 \sa180 \li0 \fi0 or empty lines!\par}
+        \\{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs32 Code Example\par}
+        \\{\pard \ql \f0 \sa180 \li0 \fi0 \f1 int main() \{\line 
+        \\    return 0;\line 
+        \\\}\par}
+        \\{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs28 Quotes\par}
+        \\{\pard \ql \f0 \sa180 \li0 \fi0 we can also quote Einstein\par}
+        \\{\pard \ql \f0 \sa180 \li720 \fi0 This is a small step for a ziguana\line 
+        \\but a great step for zig-kind!\par}
+        \\{\pard \ql \f0 \sa180 \li0 \fi0 {\field{\*\fldinst{HYPERLINK "ftp://ftp.scene.org/pub/"}}{\fldrslt{\ul Demoscene Archives}}}\par}
+        \\{\pard \ql \f0 \sa180 \li0 \fi0 {\field{\*\fldinst{HYPERLINK "ftp://ftp.scene.org/pub/"}}{\fldrslt{\ul ftp://ftp.scene.org/pub/}}}\par}
+        \\}
+    );
+
+    try testDocumentFormatter(document_rtf, "rtf");
+}

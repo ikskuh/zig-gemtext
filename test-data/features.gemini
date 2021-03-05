@@ -1,0 +1,20 @@
+# Heading 1
+## Heading 2
+### Heading 3
+> Quotation Line 1
+> Quotation Line 2
+This is normal text Line 1
+This is normal text Line 2
+=> gemini://gemini.circumlu{}nar.space This is a link
+* Bullet 1
+* Bullet 2
+* Bullet 3
+```
+ ______________________
+/                      \
+| This is preformatted |
+| text with two lines  |
+                       |
+\______________________/
+ 
+```

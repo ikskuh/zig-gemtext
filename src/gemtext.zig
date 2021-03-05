@@ -6,6 +6,7 @@ pub const renderer = struct {
     pub const gemtext = @import("renderers/gemtext.zig").render;
     pub const html = @import("renderers/html.zig").render;
     pub const markdown = @import("renderers/markdown.zig").render;
+    pub const rtf = @import("renderers/rtf.zig").render;
 };
 
 /// The type of a `Fragment`.

@@ -19,13 +19,22 @@ pub fn build(b: *std.build.Builder) void {
     const lib = b.addStaticLibrary("zig-gemtext", "src/lib.zig");
     lib.setBuildMode(mode);
     lib.setTarget(target);
+    lib.addIncludeDir("include"); // Import the C types via translate-c
+    lib.linkLibC();
     lib.install();
 
     var main_tests = b.addTest("src/tests.zig");
     main_tests.setBuildMode(mode);
 
+    var lib_tests = b.addTest("src/lib.zig");
+    lib_tests.linkLibrary(lib);
+    lib_tests.linkLibC();
+    lib_tests.addIncludeDir("include");
+    lib_tests.setBuildMode(mode);
+
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&main_tests.step);
+    test_step.dependOn(&lib_tests.step);
 
     const examples = b.step("examples", "Builds all examples");
 
