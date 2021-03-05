@@ -589,41 +589,6 @@ test "sequenc hand over between block types" {
     }
 }
 
-test "parse and render canonical document" {
-    const document_text =
-        "# Introduction\r\n" ++ // heading, h1
-        "This is a basic text line\r\n" ++ // paragraph
-        "And this is another one\r\n" ++
-        "* And we can also do\r\n" ++ // list
-        "* some nice\r\n" ++
-        "* lists\r\n" ++
-        "\r\n" ++ // empty
-        "or empty lines!\r\n" ++
-        "## Code Example\r\n" ++ // heading, h2
-        "```c\r\n" ++ // preformatted
-        "int main() {\r\n" ++
-        "    return 0;\r\n" ++
-        "}\r\n" ++
-        "```\r\n" ++
-        "### Quotes\r\n" ++ // heading, h3
-        "we can also quote Einstein\r\n" ++
-        "> This is a small step for a ziguana\r\n" ++ // quote
-        "> but a great step for zig-kind!\r\n" ++
-        "=> ftp://ftp.scene.org/pub/ Demoscene Archives\r\n"; // link
-
-    var output_buffer: [2 * document_text.len]u8 = undefined;
-
-    var input_stream = std.io.fixedBufferStream(document_text);
-    var output_stream = std.io.fixedBufferStream(&output_buffer);
-
-    var document = try Document.parse(std.testing.allocator, input_stream.reader());
-    defer document.deinit();
-
-    try document.render(output_stream.writer());
-
-    std.testing.expectEqualStrings(document_text, output_stream.getWritten());
-}
-
 test "Parse examples from the spec" {
     const spec_examples =
         \\Text lines should be presented to the user, after being wrapped to the appropriate width for the client's viewport (see below).  Text lines may be presented to the user in a visually pleasing manner for general reading, the precise meaning of which is at the client's discretion.  For example, variable width fonts may be used, spacing may be normalised, with spaces between sentences being made wider than spacing between words, and other such typographical niceties may be applied.  Clients may permit users to customise the appearance of text lines by altering the font, font size, text and background colour, etc.  Authors should not expect to exercise any control over the precise rendering of their text lines, only of their actual textual content.  Content such as ASCII art, computer source code, etc. which may appear incorrectly when treated as such should be enclosed between preformatting toggle lines (see 5.4.3).
@@ -647,4 +612,92 @@ test "Parse examples from the spec" {
 
     var document = try Document.parseString(std.testing.allocator, spec_examples);
     defer document.deinit();
+}
+
+fn terminateWithCrLf(comptime input_literal: []const u8) []const u8 {
+    @setEvalBranchQuota(20 * input_literal.len);
+    comptime var result: []const u8 = "";
+    comptime var iter = std.mem.split(input_literal, "\n");
+    inline while (comptime iter.next()) |line| {
+        result = result ++ line ++ "\r\n";
+    }
+    return result;
+}
+
+const document_text = terminateWithCrLf(
+// heading, h1
+    \\# Introduction
+    // paragraph
+    \\This is a basic text line
+    \\And this is another one
+    // list
+    \\* And we can also do
+    \\* some nice
+    \\* lists
+    // empty
+    \\
+    \\or empty lines!
+    // heading, h2
+    \\## Code Example
+    // preformatted
+    \\```c
+    \\int main() {
+    \\    return 0;
+    \\}
+    \\```
+    // heading, h3
+    \\### Quotes
+    \\we can also quote Einstein
+    // quote
+    \\> This is a small step for a ziguana
+    \\> but a great step for zig-kind!
+    // link + title
+    \\=> ftp://ftp.scene.org/pub/ Demoscene Archives
+    // link - title
+    \\=> ftp://ftp.scene.org/pub/
+);
+
+fn testDocumentFormatter(expected: []const u8, comptime renderer_name: []const u8) !void {
+    var output_buffer: [4096]u8 = undefined;
+
+    var input_stream = std.io.fixedBufferStream(document_text);
+    var output_stream = std.io.fixedBufferStream(&output_buffer);
+
+    var document = try Document.parse(std.testing.allocator, input_stream.reader());
+    defer document.deinit();
+
+    try @field(renderer, renderer_name)(document.fragments.items, output_stream.writer());
+
+    std.testing.expectEqualStrings(expected, output_stream.getWritten());
+}
+
+test "parse and render canonical document" {
+    try testDocumentFormatter(document_text, "gemtext");
+}
+
+test "render html" {
+    const document_html = terminateWithCrLf(
+        \\<h1>Introduction</h1>
+        \\<p>This is a basic text line</p>
+        \\<p>And this is another one</p>
+        \\<ul>
+        \\<li>And we can also do</li>
+        \\<li>some nice</li>
+        \\<li>lists</li>
+        \\</ul>
+        \\<p>&nbsp;</p>
+        \\<p>or empty lines!</p>
+        \\<h2>Code Example</h1>
+        \\<pre>int main() {
+        \\    return 0;
+        \\}</pre>
+        \\<h3>Quotes</h1>
+        \\<p>we can also quote Einstein</p>
+        \\<blockquote>This is a small step for a ziguana<br>
+        \\but a great step for zig-kind!</blockquote>
+        \\<p><a href="ftp://ftp.scene.org/pub/">Demoscene Archives</a></p>
+        \\<p><a href="ftp://ftp.scene.org/pub/">ftp://ftp.scene.org/pub/</a></p>
+    );
+
+    try testDocumentFormatter(document_html, "html");
 }

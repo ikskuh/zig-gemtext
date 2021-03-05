@@ -1,8 +1,10 @@
 const std = @import("std");
 const testing = std.testing;
 
+/// Provides a set of renderers for gemtext documents.
 pub const renderer = struct {
     pub const gemtext = @import("renderers/gemtext.zig").render;
+    pub const html = @import("renderers/html.zig").render;
 };
 
 /// The type of a `Fragment`.
