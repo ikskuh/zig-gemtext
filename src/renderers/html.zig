@@ -32,7 +32,7 @@ fn fmtHtmlText(
     }
 }
 
-fn fmtHtml(slice: []const u8) std.fmt.Formatter(fmtHtmlText) {
+pub fn fmtHtml(slice: []const u8) std.fmt.Formatter(fmtHtmlText) {
     return .{ .data = slice };
 }
 

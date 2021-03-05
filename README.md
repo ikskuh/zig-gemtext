@@ -18,6 +18,8 @@ The library is thoroughly tested with a lot of gemini text edge cases and all (t
 
 ## Example
 
+This is a simple example that parses a gemini file and converts it into a HTML file.
+
 ```zig
 pub fn main() !void {
     var document = try gemtext.Document.parse(

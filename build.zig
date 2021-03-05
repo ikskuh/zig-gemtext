@@ -9,6 +9,7 @@ const pkgs = struct {
 
 const example_list = [_][]const u8{
     "gem2html",
+    "gem2md",
 };
 
 pub fn build(b: *std.build.Builder) void {

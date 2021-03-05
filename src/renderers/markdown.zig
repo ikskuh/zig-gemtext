@@ -1,6 +1,8 @@
 const std = @import("std");
 usingnamespace @import("../gemtext.zig");
 
+const fmtHtml = @import("html.zig").fmtHtml;
+
 /// Renders a sequence of fragments into a gemini text document.
 /// `fragments` is a slice of fragments which describe the document,
 /// `writer` is a `std.io.Writer` structure that will be the target of the document rendering.
@@ -12,7 +14,7 @@ pub fn render(fragments: []const Fragment, writer: anytype) !void {
             try writer.writeAll(line_ending);
         switch (fragment) {
             .empty => try writer.writeAll("&nbsp;" ++ line_ending),
-            .paragraph => |paragraph| try writer.print("{s}" ++ line_ending, .{paragraph}),
+            .paragraph => |paragraph| try writer.print("{s}" ++ line_ending, .{fmtHtml(paragraph)}),
             .preformatted => |preformatted| {
                 if (preformatted.alt_text) |alt_text| {
                     try writer.print("```{s}" ++ line_ending, .{alt_text});
@@ -25,36 +27,26 @@ pub fn render(fragments: []const Fragment, writer: anytype) !void {
                 }
                 try writer.writeAll("```" ++ line_ending);
             },
-            .quote => |quote| {
-                for (quote.lines) |line| {
-                    try writer.writeAll("> ");
-                    try writer.writeAll(line);
-                    try writer.writeAll("  " ++ line_ending);
-                }
+            .quote => |quote| for (quote.lines) |line| {
+                try writer.print("> {}  " ++ line_ending, .{fmtHtml(line)});
             },
             .link => |link| {
                 if (link.title) |title| {
-                    try writer.print("[{s}]({s})", .{ title, link.href });
+                    try writer.print("[{s}]({s})", .{ fmtHtml(title), link.href });
                 } else {
                     try writer.writeAll(link.href);
                 }
                 try writer.writeAll(line_ending);
             },
-            .list => |list| {
-                for (list.lines) |line| {
-                    try writer.writeAll("- ");
-                    try writer.writeAll(line);
-                    try writer.writeAll(line_ending);
-                }
+            .list => |list| for (list.lines) |line| {
+                try writer.print("- {}" ++ line_ending, .{fmtHtml(line)});
             },
             .heading => |heading| {
                 switch (heading.level) {
-                    .h1 => try writer.writeAll("# "),
-                    .h2 => try writer.writeAll("## "),
-                    .h3 => try writer.writeAll("### "),
+                    .h1 => try writer.print("# {}" ++ line_ending, .{fmtHtml(heading.text)}),
+                    .h2 => try writer.print("## {}" ++ line_ending, .{fmtHtml(heading.text)}),
+                    .h3 => try writer.print("### {}" ++ line_ending, .{fmtHtml(heading.text)}),
                 }
-                try writer.writeAll(heading.text);
-                try writer.writeAll(line_ending);
             },
         }
     }
