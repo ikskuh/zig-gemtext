@@ -32,6 +32,21 @@ enum gemtext_fragment_type
   GEMTEXT_FRAGMENT_HEADING = 6,
 };
 
+enum gemtext_renderer
+{
+  /// Renders canonical gemini text
+  GEMTEXT_RENDER_GEMTEXT = 0,
+
+  /// Renders the gemini text as HTML.
+  GEMTEXT_RENDER_HTML = 1,
+
+  /// Renders the gemini text as commonmark markdown.
+  GEMTEXT_RENDER_MARKDOWN = 2,
+
+  /// Renders the gemini text as rich text.
+  GEMTEXT_RENDER_RTF = 3,
+};
+
 enum gemtext_heading_level
 {
   GEMTEXT_HEADING_H1 = 1,
@@ -138,5 +153,16 @@ enum gemtext_error gemtextParserFinalize(
 void gemtextParserDestroyFragment(
     struct gemtext_parser *parser,
     struct gemtext_fragment *fragment);
+
+/// Renders a sequence of `fragments` with the selected `renderer`.
+/// Every time text is emitted, `render` is called with
+/// both the `context` parameter passed verbatim into the callback
+/// as well as a sequence of `bytes` with the given `length`.
+enum gemtext_error gemtextRender(
+    enum gemtext_renderer renderer,
+    struct gemtext_fragment const *fragments,
+    size_t fragment_count,
+    void *context,
+    void (*render)(void *context, char const *bytes, size_t length));
 
 #endif // _GEMTEXT_H_

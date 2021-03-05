@@ -127,7 +127,7 @@ fn duplicateFragment(src: c.gemtext_fragment) !c.gemtext_fragment {
             },
         },
         .GEMTEXT_FRAGMENT_HEADING => c.gemtext_fragment{
-            .type = .GEMTEXT_FRAGMENT_PARAGRAPH,
+            .type = .GEMTEXT_FRAGMENT_HEADING,
             .unnamed_0 = .{
                 .heading = .{
                     .level = src.unnamed_0.heading.level,
@@ -411,6 +411,136 @@ export fn gemtextParserDestroyFragment(
     destroyFragment(fragment);
 }
 
+const CStream = struct {
+    const Self = @This();
+
+    context: ?*c_void,
+    render: fn (ctx: ?*c_void, bytes: [*]const u8, length: usize) callconv(.C) void,
+
+    const Error = error{};
+    const Writer = std.io.Writer(Self, Error, write);
+
+    pub fn writer(self: Self) Writer {
+        return Writer{ .context = self };
+    }
+
+    fn write(self: Self, slice: []const u8) Error!usize {
+        self.render(self.context, slice.ptr, slice.len);
+        return slice.len;
+    }
+};
+
+fn convertTextLinesToZig(src_lines: c.gemtext_lines) !gemini.TextLines {
+    var lines = try allocator.alloc([:0]const u8, src_lines.count);
+    errdefer allocator.free(lines);
+
+    var offset: usize = 0;
+
+    errdefer for (lines[0..offset]) |frag|
+        allocator.free(frag);
+
+    while (offset < lines.len) : (offset += 1) {
+        lines[offset] = try allocator.dupeZ(u8, std.mem.spanZ(src_lines.lines[offset]));
+    }
+
+    return gemini.TextLines{
+        .lines = lines,
+    };
+}
+
+fn convertFragmentToZig(src_fragment: c.gemtext_fragment) !gemini.Fragment {
+    return switch (src_fragment.type) {
+        .GEMTEXT_FRAGMENT_EMPTY => gemini.Fragment{ .empty = {} },
+        .GEMTEXT_FRAGMENT_PARAGRAPH => gemini.Fragment{
+            .paragraph = try allocator.dupeZ(u8, std.mem.spanZ(src_fragment.unnamed_0.paragraph)),
+        },
+        .GEMTEXT_FRAGMENT_PREFORMATTED => blk: {
+            var pre = gemini.Preformatted{
+                .text = undefined,
+                .alt_text = if (src_fragment.unnamed_0.preformatted.alt_text) |alt_text|
+                    try allocator.dupeZ(u8, std.mem.spanZ(alt_text))
+                else
+                    null,
+            };
+            defer if (pre.alt_text) |alt_text|
+                allocator.free(alt_text);
+
+            pre.text = try convertTextLinesToZig(src_fragment.unnamed_0.preformatted.lines);
+
+            break :blk gemini.Fragment{
+                .preformatted = pre,
+            };
+        },
+        .GEMTEXT_FRAGMENT_QUOTE => gemini.Fragment{
+            .quote = try convertTextLinesToZig(src_fragment.unnamed_0.quote),
+        },
+        .GEMTEXT_FRAGMENT_LINK => blk: {
+            var link = gemini.Link{
+                .title = null,
+                .href = try allocator.dupeZ(u8, std.mem.spanZ(src_fragment.unnamed_0.link.href)),
+            };
+            errdefer allocator.free(link.href);
+
+            link.title = if (src_fragment.unnamed_0.link.title) |title|
+                try allocator.dupeZ(u8, std.mem.spanZ(title))
+            else
+                null;
+
+            break :blk gemini.Fragment{ .link = link };
+        },
+        .GEMTEXT_FRAGMENT_LIST => gemini.Fragment{
+            .list = try convertTextLinesToZig(src_fragment.unnamed_0.list),
+        },
+        .GEMTEXT_FRAGMENT_HEADING => gemini.Fragment{
+            .heading = .{
+                .text = try allocator.dupeZ(u8, std.mem.spanZ(src_fragment.unnamed_0.heading.text)),
+                .level = switch (src_fragment.unnamed_0.heading.level) {
+                    .GEMTEXT_HEADING_H1 => .h1,
+                    .GEMTEXT_HEADING_H2 => .h2,
+                    .GEMTEXT_HEADING_H3 => .h3,
+                    else => @panic("passed invalid fragment to gemtext!"),
+                },
+            },
+        },
+        else => @panic("passed invalid fragment to gemtext!"),
+    };
+}
+
+export fn gemtextRender(
+    renderer: c.gemtext_renderer,
+    raw_fragments: [*]const c.gemtext_fragment,
+    fragment_count: usize,
+    context: ?*c_void,
+    render: fn (ctx: ?*c_void, bytes: [*]const u8, length: usize) callconv(.C) void,
+) c.gemtext_error {
+    var stream = CStream{
+        .context = context,
+        .render = render,
+    };
+
+    var fragments = allocator.alloc(gemini.Fragment, fragment_count) catch |e| return errorToC(e);
+    defer allocator.free(fragments);
+
+    var offset: usize = 0;
+
+    defer for (fragments[0..offset]) |*frag|
+        frag.free(allocator);
+
+    while (offset < fragments.len) : (offset += 1) {
+        fragments[offset] = convertFragmentToZig(raw_fragments[offset]) catch |e| return errorToC(e);
+    }
+
+    switch (renderer) {
+        .GEMTEXT_RENDER_GEMTEXT => gemini.renderer.gemtext(fragments, stream.writer()) catch unreachable,
+        .GEMTEXT_RENDER_HTML => gemini.renderer.html(fragments, stream.writer()) catch unreachable,
+        .GEMTEXT_RENDER_MARKDOWN => gemini.renderer.markdown(fragments, stream.writer()) catch unreachable,
+        .GEMTEXT_RENDER_RTF => gemini.renderer.rtf(fragments, stream.writer()) catch unreachable,
+        else => @panic("invalid renderer passed to gemtextRender!"),
+    }
+
+    return .GEMTEXT_SUCCESS;
+}
+
 test "empty document creation/deletion" {
     var doc: c.gemtext_document = undefined;
 
@@ -472,7 +602,17 @@ test "empty parser creation/deletion" {
     c.gemtextParserDestroy(&parser);
 }
 
-test "basic parser invocation and document building" {
+fn terminateWithCrLf(comptime input_literal: [:0]const u8) [:0]const u8 {
+    @setEvalBranchQuota(20 * input_literal.len);
+    comptime var result: [:0]const u8 = "";
+    comptime var iter = std.mem.split(input_literal, "\n");
+    inline while (comptime iter.next()) |line| {
+        result = result ++ line ++ "\r\n";
+    }
+    return result;
+}
+
+test "basic parser invocation and document building, also rendering" {
     var parser: c.gemtext_parser = undefined;
     var document: c.gemtext_document = undefined;
 
@@ -482,7 +622,7 @@ test "basic parser invocation and document building" {
     std.testing.expectEqual(c.gemtext_error.GEMTEXT_SUCCESS, c.gemtextDocumentCreate(&document));
     defer c.gemtextDocumentDestroy(&document);
 
-    const document_text: []const u8 = @embedFile("../test-data/features.gemini");
+    const document_text: []const u8 = terminateWithCrLf(@embedFile("../test-data/features.gemini"));
 
     var fragment: c.gemtext_fragment = undefined;
 
@@ -516,4 +656,22 @@ test "basic parser invocation and document building" {
             c.gemtextParserDestroyFragment(&parser, &fragment);
         }
     }
+
+    var list = std.ArrayList(u8).init(std.testing.allocator);
+    defer list.deinit();
+
+    std.testing.expectEqual(c.gemtext_error.GEMTEXT_SUCCESS, c.gemtextRender(
+        .GEMTEXT_RENDER_GEMTEXT,
+        document.fragments,
+        document.fragment_count,
+        &list,
+        struct {
+            fn f(ctx: ?*c_void, text: [*c]const u8, len: usize) callconv(.C) void {
+                var sublist = std.meta.cast(*std.ArrayList(u8), ctx.?);
+                sublist.appendSlice(text[0..len]) catch unreachable;
+            }
+        }.f,
+    ));
+
+    std.testing.expectEqualStrings(document_text, list.items);
 }

@@ -10,7 +10,7 @@ The library is thoroughly tested with a lot of gemini text edge cases and all (t
 
 - Fully spec-compliant gemini text parsing
 - Non-blocking streaming parser
-- Convenient API
+- Provides both a convenient Zig and C API
 - Rendering to several formats
   - Gemini text
   - HTML

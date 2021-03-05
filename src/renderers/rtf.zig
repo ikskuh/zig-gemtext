@@ -1,6 +1,8 @@
 const std = @import("std");
 usingnamespace @import("../gemtext.zig");
 
+const line_ending = "\r\n";
+
 fn fmtRtfText(
     data: []const u8,
     comptime fmt: []const u8,
@@ -34,15 +36,14 @@ pub fn fmtRtf(slice: []const u8) std.fmt.Formatter(fmtRtfText) {
     return .{ .data = slice };
 }
 
+pub const header = "{\\rtf1\\ansi{\\fonttbl{\\f0\\fswiss}{\\f1\\fmodern Courier New{\\*\\falt Monospace};}}" ++ line_ending;
+pub const footer = "}" ++ line_ending;
+
 /// Renders a sequence of fragments into a rich text document.
 /// `fragments` is a slice of fragments which describe the document,
 /// `writer` is a `std.io.Writer` structure that will be the target of the document rendering.
 /// The document will be rendered with CR LF line endings.
 pub fn render(fragments: []const Fragment, writer: anytype) !void {
-    const line_ending = "\r\n";
-
-    try writer.writeAll("{\\rtf1\\ansi{\\fonttbl{\\f0\\fswiss}{\\f1\\fmodern Courier New{\\*\\falt Monospace};}}" ++ line_ending);
-
     for (fragments) |fragment| {
         switch (fragment) {
             .empty => try writer.writeAll("{\\pard \\ql \\f0 \\sa180 \\li0 \\fi0 \\par}" ++ line_ending),
@@ -94,6 +95,4 @@ pub fn render(fragments: []const Fragment, writer: anytype) !void {
             },
         }
     }
-
-    try writer.writeAll("}" ++ line_ending);
 }

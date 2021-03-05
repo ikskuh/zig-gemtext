@@ -743,7 +743,7 @@ test "render markdown" {
 
 test "render rtf" {
     const document_rtf = terminateWithCrLf(
-        \\{\rtf1\ansi{\fonttbl{\f0\fswiss}{\f1\fmodern Courier New{\*\falt Monospace};}}
+    //\\{\rtf1\ansi{\fonttbl{\f0\fswiss}{\f1\fmodern Courier New{\*\falt Monospace};}}
         \\{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs36 Introduction\par}
         \\{\pard \ql \f0 \sa180 \li0 \fi0 This is a basic text line\par}
         \\{\pard \ql \f0 \sa180 \li0 \fi0 And this is another one\par}
@@ -762,7 +762,7 @@ test "render rtf" {
         \\but a great step for zig-kind!\par}
         \\{\pard \ql \f0 \sa180 \li0 \fi0 {\field{\*\fldinst{HYPERLINK "ftp://ftp.scene.org/pub/"}}{\fldrslt{\ul Demoscene Archives}}}\par}
         \\{\pard \ql \f0 \sa180 \li0 \fi0 {\field{\*\fldinst{HYPERLINK "ftp://ftp.scene.org/pub/"}}{\fldrslt{\ul ftp://ftp.scene.org/pub/}}}\par}
-        \\}
+        //\\}
     );
 
     try testDocumentFormatter(document_rtf, "rtf");
