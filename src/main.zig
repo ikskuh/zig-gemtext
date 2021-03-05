@@ -90,6 +90,45 @@ pub const Document = struct {
     pub fn render(self: Self, writer: anytype) !void {
         try renderFragments(self.fragments.items, writer);
     }
+
+    /// Parses a document from a text string.
+    pub fn parseString(allocator: *std.mem.Allocator, text: []const u8) !Document {
+        var stream = std.io.fixedBufferStream(text);
+        return parse(allocator, stream.reader());
+    }
+
+    /// Parses a document from a stream.
+    pub fn parse(allocator: *std.mem.Allocator, reader: anytype) !Document {
+        var doc = Document.init(allocator);
+        errdefer doc.deinit();
+
+        var parser = Parser.init(allocator);
+        defer parser.deinit();
+
+        while (true) {
+            var buffer: [1024]u8 = undefined;
+            const len = try reader.readAll(&buffer);
+            if (len == 0)
+                break;
+
+            var offset: usize = 0;
+            while (offset < len) {
+                var res = try parser.feed(&doc.arena.allocator, buffer[offset..len]);
+                offset += res.consumed;
+                if (res.fragment) |*frag| {
+                    errdefer frag.free(&doc.arena.allocator);
+                    try doc.fragments.append(frag.*);
+                }
+            }
+        }
+
+        if (try parser.finalize(&doc.arena.allocator)) |*frag| {
+            errdefer frag.free(&doc.arena.allocator);
+            try doc.fragments.append(frag.*);
+        }
+
+        return doc;
+    }
 };
 
 const legal_whitespace = "\t ";
@@ -1061,4 +1100,64 @@ test "sequenc hand over between block types" {
             "---\r\n";
         try testSequenceParsing(&expected_sequence, text_rendering);
     }
+}
+
+test "parse and render canonical document" {
+    const document_text =
+        "# Introduction\r\n" ++ // heading, h1
+        "This is a basic text line\r\n" ++ // paragraph
+        "And this is another one\r\n" ++
+        "* And we can also do\r\n" ++ // list
+        "* some nice\r\n" ++
+        "* lists\r\n" ++
+        "\r\n" ++ // empty
+        "or empty lines!\r\n" ++
+        "## Code Example\r\n" ++ // heading, h2
+        "```c\r\n" ++ // preformatted
+        "int main() {\r\n" ++
+        "    return 0;\r\n" ++
+        "}\r\n" ++
+        "```\r\n" ++
+        "### Quotes\r\n" ++ // heading, h3
+        "we can also quote Einstein\r\n" ++
+        "> This is a small step for a ziguana\r\n" ++ // quote
+        "> but a great step for zig-kind!\r\n" ++
+        "=> ftp://ftp.scene.org/pub/ Demoscene Archives\r\n"; // link
+
+    var output_buffer: [2 * document_text.len]u8 = undefined;
+
+    var input_stream = std.io.fixedBufferStream(document_text);
+    var output_stream = std.io.fixedBufferStream(&output_buffer);
+
+    var document = try Document.parse(std.testing.allocator, input_stream.reader());
+    defer document.deinit();
+
+    try document.render(output_stream.writer());
+
+    std.testing.expectEqualStrings(document_text, output_stream.getWritten());
+}
+
+test "Parse examples from the spec" {
+    const spec_examples =
+        \\Text lines should be presented to the user, after being wrapped to the appropriate width for the client's viewport (see below).  Text lines may be presented to the user in a visually pleasing manner for general reading, the precise meaning of which is at the client's discretion.  For example, variable width fonts may be used, spacing may be normalised, with spaces between sentences being made wider than spacing between words, and other such typographical niceties may be applied.  Clients may permit users to customise the appearance of text lines by altering the font, font size, text and background colour, etc.  Authors should not expect to exercise any control over the precise rendering of their text lines, only of their actual textual content.  Content such as ASCII art, computer source code, etc. which may appear incorrectly when treated as such should be enclosed between preformatting toggle lines (see 5.4.3).
+        \\Authors who insist on hard-wrapping their content MUST be aware that the content will display neatly on clients whose display device is as wide as the hard-wrapped length or wider, but will appear with irregular line widths on narrower clients.
+        \\
+        \\=> gemini://example.org/
+        \\=> gemini://example.org/ An example link
+        \\=> gemini://example.org/foo	Another example link at the same host
+        \\=> foo/bar/baz.txt	A relative link
+        \\=> 	gopher://example.org:70/1 A gopher link
+        \\```
+        \\=>[<whitespace>]<URL>[<whitespace><USER-FRIENDLY LINK NAME>]
+        \\```
+        \\# Appendix 1. Full two digit status codes
+        \\## 10 INPUT
+        \\### 5.5.3 Quote lines
+        \\* <whitespa0ce> is any non-zero number of consecutive spaces or tabs
+        \\* Square brackets indicate that the enclosed content is optional.
+        \\* <URL> is a URL, which may be absolute or relative.
+    ;
+
+    var document = try Document.parseString(std.testing.allocator, spec_examples);
+    defer document.deinit();
 }
