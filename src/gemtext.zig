@@ -5,6 +5,7 @@ const testing = std.testing;
 pub const renderer = struct {
     pub const gemtext = @import("renderers/gemtext.zig").render;
     pub const html = @import("renderers/html.zig").render;
+    pub const markdown = @import("renderers/markdown.zig").render;
 };
 
 /// The type of a `Fragment`.

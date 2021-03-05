@@ -701,3 +701,42 @@ test "render html" {
 
     try testDocumentFormatter(document_html, "html");
 }
+
+test "render markdown" {
+    const document_markdown = terminateWithCrLf(
+        \\# Introduction
+        \\
+        \\This is a basic text line
+        \\
+        \\And this is another one
+        \\
+        \\- And we can also do
+        \\- some nice
+        \\- lists
+        \\
+        \\&nbsp;
+        \\
+        \\or empty lines!
+        \\
+        \\## Code Example
+        \\
+        \\```c
+        \\int main() {
+        \\    return 0;
+        \\}
+        \\```
+        \\
+        \\### Quotes
+        \\
+        \\we can also quote Einstein
+        \\
+        \\> This is a small step for a ziguana  
+        \\> but a great step for zig-kind!  
+        \\
+        \\[Demoscene Archives](ftp://ftp.scene.org/pub/)
+        \\
+        \\ftp://ftp.scene.org/pub/
+    );
+
+    try testDocumentFormatter(document_markdown, "markdown");
+}
