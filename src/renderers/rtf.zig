@@ -9,6 +9,9 @@ fn fmtRtfText(
     options: std.fmt.FormatOptions,
     writer: anytype,
 ) !void {
+    _ = fmt;
+    _ = options;
+
     const illegal = "\\{}";
 
     const replacement = [_][]const u8{

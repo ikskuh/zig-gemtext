@@ -7,6 +7,9 @@ fn fmtHtmlText(
     options: std.fmt.FormatOptions,
     writer: anytype,
 ) !void {
+    _ = fmt;
+    _ = options;
+
     const illegal = "<>&\"\'";
 
     const replacement = [_][]const u8{
@@ -47,7 +50,11 @@ pub fn render(fragments: []const Fragment, writer: anytype) !void {
             .empty => try writer.writeAll("<p>&nbsp;</p>\r\n"),
             .paragraph => |paragraph| try writer.print("<p>{s}</p>" ++ line_ending, .{fmtHtml(paragraph)}),
             .preformatted => |preformatted| {
-                try writer.writeAll("<pre>");
+                if (preformatted.alt_text) |alt| {
+                    try writer.print("<pre alt=\"{}\">", .{fmtHtml(alt)});
+                } else {
+                    try writer.writeAll("<pre>");
+                }
                 for (preformatted.text.lines) |line, i| {
                     if (i > 0)
                         try writer.writeAll(line_ending);
