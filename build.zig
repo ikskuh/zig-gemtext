@@ -3,7 +3,7 @@ const std = @import("std");
 const pkgs = struct {
     const gemtext = std.build.Pkg{
         .name = "gemtext",
-        .path = "src/gemtext.zig",
+        .path = .{ .path = "src/gemtext.zig" },
     };
 };
 

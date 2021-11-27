@@ -1,7 +1,14 @@
 const std = @import("std");
 const gemini = @import("gemtext.zig");
-
-usingnamespace gemini;
+const Fragment = gemini.Fragment;
+const FragmentType = gemini.FragmentType;
+const Parser = gemini.Parser;
+const TextLines = gemini.TextLines;
+const Preformatted = gemini.Preformatted;
+const Link = gemini.Link;
+const Heading = gemini.Heading;
+const Document = gemini.Document;
+const renderer = gemini.renderer;
 
 fn testDocumentRendering(expected: []const u8, fragments: []const Fragment) !void {
     var buffer: [4096]u8 = undefined;
@@ -10,7 +17,7 @@ fn testDocumentRendering(expected: []const u8, fragments: []const Fragment) !voi
 
     try renderer.gemtext(fragments, stream.writer());
 
-    std.testing.expectEqualStrings(expected, stream.getWritten());
+    try std.testing.expectEqualStrings(expected, stream.getWritten());
 }
 
 test "render empty line" {
@@ -106,42 +113,42 @@ test "render headings" {
     });
 }
 
-fn expectEqualLines(expected: TextLines, actual: TextLines) void {
-    std.testing.expectEqual(expected.lines.len, actual.lines.len);
+fn expectEqualLines(expected: TextLines, actual: TextLines) !void {
+    try std.testing.expectEqual(expected.lines.len, actual.lines.len);
     for (expected.lines) |line, i| {
-        std.testing.expectEqualStrings(line, actual.lines[i]);
+        try std.testing.expectEqualStrings(line, actual.lines[i]);
     }
 }
 
-fn expectFragmentEqual(expected_opt: ?Fragment, actual_opt: ?Fragment) void {
+fn expectFragmentEqual(expected_opt: ?Fragment, actual_opt: ?Fragment) !void {
     if (expected_opt == null) {
-        std.testing.expect(actual_opt == null);
+        try std.testing.expect(actual_opt == null);
         return;
     }
 
     const expected = expected_opt.?;
     const actual = actual_opt.?;
 
-    std.testing.expectEqual(@as(FragmentType, expected), @as(FragmentType, actual));
+    try std.testing.expectEqual(@as(FragmentType, expected), @as(FragmentType, actual));
 
     switch (expected) {
         .empty => {},
-        .paragraph => |paragraph| std.testing.expectEqualStrings(paragraph, actual.paragraph),
+        .paragraph => |paragraph| try std.testing.expectEqualStrings(paragraph, actual.paragraph),
         .preformatted => |preformatted| {
             if (preformatted.alt_text) |alt_text|
-                std.testing.expectEqualStrings(alt_text, actual.preformatted.alt_text.?);
-            expectEqualLines(preformatted.text, actual.preformatted.text);
+                try std.testing.expectEqualStrings(alt_text, actual.preformatted.alt_text.?);
+            try expectEqualLines(preformatted.text, actual.preformatted.text);
         },
-        .quote => |quote| expectEqualLines(quote, actual.quote),
+        .quote => |quote| try expectEqualLines(quote, actual.quote),
         .link => |link| {
             if (link.title) |title|
-                std.testing.expectEqualStrings(title, actual.link.title.?);
-            std.testing.expectEqualStrings(link.href, actual.link.href);
+                try std.testing.expectEqualStrings(title, actual.link.title.?);
+            try std.testing.expectEqualStrings(link.href, actual.link.href);
         },
-        .list => |list| expectEqualLines(list, actual.list),
+        .list => |list| try expectEqualLines(list, actual.list),
         .heading => |heading| {
-            std.testing.expectEqual(heading.level, actual.heading.level);
-            std.testing.expectEqualStrings(heading.text, actual.heading.text);
+            try std.testing.expectEqual(heading.level, actual.heading.level);
+            try std.testing.expectEqualStrings(heading.text, actual.heading.text);
         },
     }
 }
@@ -161,32 +168,32 @@ fn testFragmentParsing(fragment: ?Fragment, text: []const u8) !void {
         offset += res.consumed;
         if (res.fragment) |*frag| {
             defer frag.free(std.testing.allocator);
-            std.testing.expectEqual(false, got_fragment);
+            try std.testing.expectEqual(false, got_fragment);
 
             // Clear the input text to make sure we didn't accidently pass a reference to our input slice
             std.mem.set(u8, dupe_text, '?');
 
-            expectFragmentEqual(fragment, frag.*);
+            try expectFragmentEqual(fragment, frag.*);
             got_fragment = true;
             break;
         }
     }
 
-    std.testing.expectEqual(text.len, offset);
+    try std.testing.expectEqual(text.len, offset);
 
     if (try parser.finalize(std.testing.allocator)) |*frag| {
         defer frag.free(std.testing.allocator);
-        std.testing.expectEqual(false, got_fragment);
+        try std.testing.expectEqual(false, got_fragment);
 
         // Clear the input text to make sure we didn't accidently pass a reference to our input slice
         std.mem.set(u8, dupe_text, '?');
 
-        expectFragmentEqual(fragment, frag.*);
+        try expectFragmentEqual(fragment, frag.*);
     } else {
         if (fragment != null) {
-            std.testing.expectEqual(true, got_fragment);
+            try std.testing.expectEqual(true, got_fragment);
         } else {
-            std.testing.expectEqual(false, got_fragment);
+            try std.testing.expectEqual(false, got_fragment);
         }
     }
 }
@@ -195,10 +202,10 @@ test "parse incomplete fragment" {
     var parser = Parser.init(std.testing.allocator);
     defer parser.deinit();
 
-    std.testing.expectEqual(Parser.Result{ .consumed = 8, .fragment = null }, try parser.feed(std.testing.allocator, "12345678"));
-    std.testing.expectEqual(Parser.Result{ .consumed = 8, .fragment = null }, try parser.feed(std.testing.allocator, "12345678"));
-    std.testing.expectEqual(Parser.Result{ .consumed = 8, .fragment = null }, try parser.feed(std.testing.allocator, "12345678"));
-    std.testing.expectEqual(Parser.Result{ .consumed = 8, .fragment = null }, try parser.feed(std.testing.allocator, "12345678"));
+    try std.testing.expectEqual(Parser.Result{ .consumed = 8, .fragment = null }, try parser.feed(std.testing.allocator, "12345678"));
+    try std.testing.expectEqual(Parser.Result{ .consumed = 8, .fragment = null }, try parser.feed(std.testing.allocator, "12345678"));
+    try std.testing.expectEqual(Parser.Result{ .consumed = 8, .fragment = null }, try parser.feed(std.testing.allocator, "12345678"));
+    try std.testing.expectEqual(Parser.Result{ .consumed = 8, .fragment = null }, try parser.feed(std.testing.allocator, "12345678"));
 }
 
 test "parse empty line" {
@@ -462,7 +469,7 @@ fn testSequenceParsing(expected_sequence: []const Fragment, text: []const u8) !v
             }
         }
 
-        std.testing.expectEqual(text.len, offset);
+        try std.testing.expectEqual(text.len, offset);
 
         if (try parser.finalize(&arena.allocator)) |frag| {
             try actual_sequence.append(frag);
@@ -472,10 +479,10 @@ fn testSequenceParsing(expected_sequence: []const Fragment, text: []const u8) !v
     // Clear the input text to make sure we didn't accidently pass a reference to our input slice
     std.mem.set(u8, dupe_text, '?');
 
-    std.testing.expectEqual(expected_sequence.len, actual_sequence.items.len);
+    try std.testing.expectEqual(expected_sequence.len, actual_sequence.items.len);
 
     for (expected_sequence) |expected, i| {
-        expectFragmentEqual(expected, actual_sequence.items[i]);
+        try expectFragmentEqual(expected, actual_sequence.items[i]);
     }
 }
 
@@ -617,7 +624,7 @@ test "Parse examples from the spec" {
 fn terminateWithCrLf(comptime input_literal: [:0]const u8) [:0]const u8 {
     @setEvalBranchQuota(20 * input_literal.len);
     comptime var result: [:0]const u8 = "";
-    comptime var iter = std.mem.split(input_literal, "\n");
+    comptime var iter = std.mem.split(u8, input_literal, "\n");
     inline while (comptime iter.next()) |line| {
         result = result ++ line ++ "\r\n";
     }
@@ -668,7 +675,7 @@ fn testDocumentFormatter(expected: []const u8, comptime renderer_name: []const u
 
     try @field(renderer, renderer_name)(document.fragments.items, output_stream.writer());
 
-    std.testing.expectEqualStrings(expected, output_stream.getWritten());
+    try std.testing.expectEqualStrings(expected, output_stream.getWritten());
 }
 
 test "parse and render canonical document" {
@@ -688,7 +695,7 @@ test "render html" {
         \\<p>&nbsp;</p>
         \\<p>or empty lines!</p>
         \\<h2>Code Example</h1>
-        \\<pre>int main() {
+        \\<pre alt="c">int main() {
         \\    return 0;
         \\}</pre>
         \\<h3>Quotes</h1>

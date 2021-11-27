@@ -1,5 +1,6 @@
 const std = @import("std");
-usingnamespace @import("../gemtext.zig");
+const gemtext = @import("../gemtext.zig");
+const Fragment = gemtext.Fragment;
 
 fn fmtHtmlText(
     data: []const u8,

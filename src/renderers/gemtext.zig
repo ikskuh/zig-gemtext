@@ -1,5 +1,6 @@
 const std = @import("std");
-usingnamespace @import("../gemtext.zig");
+const gemtext = @import("../gemtext.zig");
+const Fragment = gemtext.Fragment;
 
 /// Renders a sequence of fragments into a gemini text document.
 /// `fragments` is a slice of fragments which describe the document,
