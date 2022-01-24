@@ -462,7 +462,7 @@ fn testSequenceParsing(expected_sequence: []const Fragment, text: []const u8) !v
 
         var offset: usize = 0;
         while (offset < dupe_text.len) {
-            var res = try parser.feed(&arena.allocator, dupe_text[offset..]);
+            var res = try parser.feed(arena.allocator(), dupe_text[offset..]);
             offset += res.consumed;
             if (res.fragment) |frag| {
                 try actual_sequence.append(frag);
@@ -471,7 +471,7 @@ fn testSequenceParsing(expected_sequence: []const Fragment, text: []const u8) !v
 
         try std.testing.expectEqual(text.len, offset);
 
-        if (try parser.finalize(&arena.allocator)) |frag| {
+        if (try parser.finalize(arena.allocator())) |frag| {
             try actual_sequence.append(frag);
         }
     }

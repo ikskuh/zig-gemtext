@@ -43,7 +43,7 @@ fn dupeString(src: [*:0]const u8) ![*:0]u8 {
 }
 
 fn freeString(src: [*:0]const u8) void {
-    allocator.free(std.mem.spanZ(@intToPtr([*:0]u8, @ptrToInt(src))));
+    allocator.free(std.mem.sliceTo(@intToPtr([*:0]u8, @ptrToInt(src)), 0));
 }
 
 fn dupeLines(src_lines: c.gemtext_lines) !c.gemtext_lines {
@@ -52,10 +52,10 @@ fn dupeLines(src_lines: c.gemtext_lines) !c.gemtext_lines {
 
     var offset: usize = 0;
     errdefer for (lines[0..offset]) |line|
-        allocator.free(std.mem.spanZ(line));
+        allocator.free(std.mem.sliceTo(line, 0));
 
     while (offset < lines.len) : (offset += 1) {
-        lines[offset] = (try allocator.dupeZ(u8, std.mem.spanZ(src_lines.lines[offset]))).ptr;
+        lines[offset] = (try allocator.dupeZ(u8, std.mem.sliceTo(src_lines.lines[offset], 0))).ptr;
     }
     return c.gemtext_lines{
         .count = lines.len,
@@ -143,7 +143,7 @@ fn destroyLines(src_lines: *c.gemtext_lines) void {
     if (src_lines.count > 0) {
         const lines = src_lines.lines[0..src_lines.count];
         for (lines) |line| {
-            allocator.free(std.mem.spanZ(line));
+            allocator.free(std.mem.sliceTo(line, 0));
         }
         allocator.free(lines);
     }
@@ -414,8 +414,8 @@ export fn gemtextParserDestroyFragment(
 const CStream = struct {
     const Self = @This();
 
-    context: ?*c_void,
-    render: fn (ctx: ?*c_void, bytes: [*]const u8, length: usize) callconv(.C) void,
+    context: ?*anyopaque,
+    render: fn (ctx: ?*anyopaque, bytes: [*]const u8, length: usize) callconv(.C) void,
 
     const StreamError = error{};
     const Writer = std.io.Writer(Self, StreamError, write);
@@ -440,7 +440,7 @@ fn convertTextLinesToZig(src_lines: c.gemtext_lines) !gemini.TextLines {
         allocator.free(frag);
 
     while (offset < lines.len) : (offset += 1) {
-        lines[offset] = try allocator.dupeZ(u8, std.mem.spanZ(src_lines.lines[offset]));
+        lines[offset] = try allocator.dupeZ(u8, std.mem.sliceTo(src_lines.lines[offset], 0));
     }
 
     return gemini.TextLines{
@@ -452,13 +452,13 @@ fn convertFragmentToZig(src_fragment: c.gemtext_fragment) !gemini.Fragment {
     return switch (src_fragment.type) {
         c.GEMTEXT_FRAGMENT_EMPTY => gemini.Fragment{ .empty = {} },
         c.GEMTEXT_FRAGMENT_PARAGRAPH => gemini.Fragment{
-            .paragraph = try allocator.dupeZ(u8, std.mem.spanZ(src_fragment.unnamed_0.paragraph)),
+            .paragraph = try allocator.dupeZ(u8, std.mem.sliceTo(src_fragment.unnamed_0.paragraph, 0)),
         },
         c.GEMTEXT_FRAGMENT_PREFORMATTED => blk: {
             var pre = gemini.Preformatted{
                 .text = undefined,
                 .alt_text = if (src_fragment.unnamed_0.preformatted.alt_text) |alt_text|
-                    try allocator.dupeZ(u8, std.mem.spanZ(alt_text))
+                    try allocator.dupeZ(u8, std.mem.sliceTo(alt_text, 0))
                 else
                     null,
             };
@@ -477,12 +477,12 @@ fn convertFragmentToZig(src_fragment: c.gemtext_fragment) !gemini.Fragment {
         c.GEMTEXT_FRAGMENT_LINK => blk: {
             var link = gemini.Link{
                 .title = null,
-                .href = try allocator.dupeZ(u8, std.mem.spanZ(src_fragment.unnamed_0.link.href)),
+                .href = try allocator.dupeZ(u8, std.mem.sliceTo(src_fragment.unnamed_0.link.href, 0)),
             };
             errdefer allocator.free(link.href);
 
             link.title = if (src_fragment.unnamed_0.link.title) |title|
-                try allocator.dupeZ(u8, std.mem.spanZ(title))
+                try allocator.dupeZ(u8, std.mem.sliceTo(title, 0))
             else
                 null;
 
@@ -493,7 +493,7 @@ fn convertFragmentToZig(src_fragment: c.gemtext_fragment) !gemini.Fragment {
         },
         c.GEMTEXT_FRAGMENT_HEADING => gemini.Fragment{
             .heading = .{
-                .text = try allocator.dupeZ(u8, std.mem.spanZ(src_fragment.unnamed_0.heading.text)),
+                .text = try allocator.dupeZ(u8, std.mem.sliceTo(src_fragment.unnamed_0.heading.text, 0)),
                 .level = switch (src_fragment.unnamed_0.heading.level) {
                     c.GEMTEXT_HEADING_H1 => .h1,
                     c.GEMTEXT_HEADING_H2 => .h2,
@@ -510,8 +510,8 @@ export fn gemtextRender(
     renderer: c.gemtext_renderer,
     raw_fragments: [*]const c.gemtext_fragment,
     fragment_count: usize,
-    context: ?*c_void,
-    render: fn (ctx: ?*c_void, bytes: [*]const u8, length: usize) callconv(.C) void,
+    context: ?*anyopaque,
+    render: fn (ctx: ?*anyopaque, bytes: [*]const u8, length: usize) callconv(.C) void,
 ) c.gemtext_error {
     var stream = CStream{
         .context = context,
@@ -784,7 +784,7 @@ test "basic parser invocation and document building, also rendering" {
         document.fragment_count,
         &list,
         struct {
-            fn f(ctx: ?*c_void, text: [*c]const u8, len: usize) callconv(.C) void {
+            fn f(ctx: ?*anyopaque, text: [*c]const u8, len: usize) callconv(.C) void {
                 var sublist = @ptrCast(*std.ArrayList(u8), @alignCast(@alignOf(std.ArrayList(u8)), ctx.?));
                 sublist.appendSlice(text[0..len]) catch unreachable;
             }

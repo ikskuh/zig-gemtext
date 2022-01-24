@@ -10,7 +10,7 @@ pub const renderer = struct {
 };
 
 /// The type of a `Fragment`.
-pub const FragmentType = std.meta.TagType(Fragment);
+pub const FragmentType = std.meta.Tag(Fragment);
 
 /// A fragment is a part of a gemini text document.
 /// It is either a basic line or contains several lines grouped into logical units.
@@ -25,7 +25,7 @@ pub const Fragment = union(enum) {
     list: TextLines,
     heading: Heading,
 
-    pub fn free(self: *Self, allocator: *std.mem.Allocator) void {
+    pub fn free(self: *Self, allocator: std.mem.Allocator) void {
         switch (self.*) {
             .empty => {},
             .paragraph => |text| allocator.free(text),
@@ -47,7 +47,7 @@ pub const Fragment = union(enum) {
     }
 };
 
-fn freeTextLines(lines: *TextLines, allocator: *std.mem.Allocator) void {
+fn freeTextLines(lines: *TextLines, allocator: std.mem.Allocator) void {
     for (lines.lines) |line| {
         allocator.free(line);
     }
@@ -87,7 +87,7 @@ pub const Document = struct {
     arena: std.heap.ArenaAllocator,
     fragments: std.ArrayList(Fragment),
 
-    pub fn init(allocator: *std.mem.Allocator) Self {
+    pub fn init(allocator: std.mem.Allocator) Self {
         return Self{
             .arena = std.heap.ArenaAllocator.init(allocator),
             .fragments = std.ArrayList(Fragment).init(allocator),
@@ -105,13 +105,13 @@ pub const Document = struct {
     }
 
     /// Parses a document from a text string.
-    pub fn parseString(allocator: *std.mem.Allocator, text: []const u8) !Document {
+    pub fn parseString(allocator: std.mem.Allocator, text: []const u8) !Document {
         var stream = std.io.fixedBufferStream(text);
         return parse(allocator, stream.reader());
     }
 
     /// Parses a document from a stream.
-    pub fn parse(allocator: *std.mem.Allocator, reader: anytype) !Document {
+    pub fn parse(allocator: std.mem.Allocator, reader: anytype) !Document {
         var doc = Document.init(allocator);
         errdefer doc.deinit();
 
@@ -126,17 +126,17 @@ pub const Document = struct {
 
             var offset: usize = 0;
             while (offset < len) {
-                var res = try parser.feed(&doc.arena.allocator, buffer[offset..len]);
+                var res = try parser.feed(doc.arena.allocator(), buffer[offset..len]);
                 offset += res.consumed;
                 if (res.fragment) |*frag| {
-                    errdefer frag.free(&doc.arena.allocator);
+                    errdefer frag.free(doc.arena.allocator());
                     try doc.fragments.append(frag.*);
                 }
             }
         }
 
-        if (try parser.finalize(&doc.arena.allocator)) |*frag| {
-            errdefer frag.free(&doc.arena.allocator);
+        if (try parser.finalize(doc.arena.allocator())) |*frag| {
+            errdefer frag.free(doc.arena.allocator());
             try doc.fragments.append(frag.*);
         }
 
@@ -151,7 +151,7 @@ fn trimLine(input: []const u8) []const u8 {
     return std.mem.trim(u8, input, legal_whitespace);
 }
 
-fn dupeAndTrim(allocator: *std.mem.Allocator, input: []const u8) ![:0]u8 {
+fn dupeAndTrim(allocator: std.mem.Allocator, input: []const u8) ![:0]u8 {
     return try allocator.dupeZ(
         u8,
         trimLine(input),
@@ -184,13 +184,13 @@ pub const Parser = struct {
         fragment: ?Fragment,
     };
 
-    allocator: *std.mem.Allocator,
+    allocator: std.mem.Allocator,
     line_buffer: std.ArrayList(u8),
     text_block_buffer: std.ArrayList([]u8),
     state: State,
 
     /// Initialize a new parser.
-    pub fn init(allocator: *std.mem.Allocator) Self {
+    pub fn init(allocator: std.mem.Allocator) Self {
         return Self{
             .allocator = allocator,
             .line_buffer = std.ArrayList(u8).init(allocator),
@@ -214,7 +214,7 @@ pub const Parser = struct {
     /// document byte sequence.
     /// The result will contain both the number of `consumed` bytes in `slice` and a `fragment` if any line was detected.
     /// `fragment_allocator` will be used to allocate the memory returned in `Fragment` if any.
-    pub fn feed(self: *Self, fragment_allocator: *std.mem.Allocator, slice: []const u8) !Result {
+    pub fn feed(self: *Self, fragment_allocator: std.mem.Allocator, slice: []const u8) !Result {
         var offset: usize = 0;
         main_loop: while (offset < slice.len) : (offset += 1) {
             if (slice[offset] == '\n') {
@@ -406,7 +406,7 @@ pub const Parser = struct {
     /// This funtion makes sure every block is terminated properly and returned
     /// even if the last line is not terminated.
     /// `fragment_allocator` will be used to allocate the memory returned in `Fragment` if any.
-    pub fn finalize(self: *Self, fragment_allocator: *std.mem.Allocator) !?Fragment {
+    pub fn finalize(self: *Self, fragment_allocator: std.mem.Allocator) !?Fragment {
         // for default state and an empty line, we can be sure that there is nothing
         // to be done. If the line is empty, but we're still in a block, we still have to terminate
         // that block to be sure
@@ -429,7 +429,7 @@ pub const Parser = struct {
     }
 
     const BlockType = enum { preformatted, block_quote, list };
-    fn createBlockFragment(self: *Self, fragment_allocator: *std.mem.Allocator, fragment_type: BlockType) !Fragment {
+    fn createBlockFragment(self: *Self, fragment_allocator: std.mem.Allocator, fragment_type: BlockType) !Fragment {
         var alt_text: ?[:0]const u8 = if (fragment_type == .preformatted) blk: {
             std.debug.assert(self.text_block_buffer.items.len > 0);
 
@@ -473,7 +473,7 @@ pub const Parser = struct {
         };
     }
 
-    fn createBlockFragmentFromStateAndResetState(self: *Self, fragment_allocator: *std.mem.Allocator) !?Fragment {
+    fn createBlockFragmentFromStateAndResetState(self: *Self, fragment_allocator: std.mem.Allocator) !?Fragment {
         defer self.state = .default;
         return switch (self.state) {
             .block_quote => try self.createBlockFragment(fragment_allocator, .block_quote),
