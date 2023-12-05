@@ -743,7 +743,7 @@ test "basic parser invocation and document building, also rendering" {
     try std.testing.expectEqual(c.GEMTEXT_SUCCESS, c.gemtextDocumentCreate(&document));
     defer c.gemtextDocumentDestroy(&document);
 
-    const document_text: []const u8 = terminateWithCrLf(@embedFile("../test-data/features.gemini"));
+    const document_text: []const u8 = terminateWithCrLf(@embedFile("test-data/features.gemini"));
 
     var fragment: c.gemtext_fragment = undefined;
 
