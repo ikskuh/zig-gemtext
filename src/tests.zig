@@ -171,7 +171,7 @@ fn testFragmentParsing(fragment: ?Fragment, text: []const u8) !void {
             try std.testing.expectEqual(false, got_fragment);
 
             // Clear the input text to make sure we didn't accidently pass a reference to our input slice
-            std.mem.set(u8, dupe_text, '?');
+            @memset(dupe_text, '?');
 
             try expectFragmentEqual(fragment, frag.*);
             got_fragment = true;
@@ -186,7 +186,7 @@ fn testFragmentParsing(fragment: ?Fragment, text: []const u8) !void {
         try std.testing.expectEqual(false, got_fragment);
 
         // Clear the input text to make sure we didn't accidently pass a reference to our input slice
-        std.mem.set(u8, dupe_text, '?');
+        @memset(dupe_text, '?');
 
         try expectFragmentEqual(fragment, frag.*);
     } else {
@@ -477,7 +477,7 @@ fn testSequenceParsing(expected_sequence: []const Fragment, text: []const u8) !v
     }
 
     // Clear the input text to make sure we didn't accidently pass a reference to our input slice
-    std.mem.set(u8, dupe_text, '?');
+    @memset(dupe_text, '?');
 
     try std.testing.expectEqual(expected_sequence.len, actual_sequence.items.len);
 
