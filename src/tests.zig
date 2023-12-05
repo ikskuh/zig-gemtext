@@ -115,7 +115,7 @@ test "render headings" {
 
 fn expectEqualLines(expected: TextLines, actual: TextLines) !void {
     try std.testing.expectEqual(expected.lines.len, actual.lines.len);
-    for (expected.lines) |line, i| {
+    for (expected.lines, 0..) |line, i| {
         try std.testing.expectEqualStrings(line, actual.lines[i]);
     }
 }
@@ -481,7 +481,7 @@ fn testSequenceParsing(expected_sequence: []const Fragment, text: []const u8) !v
 
     try std.testing.expectEqual(expected_sequence.len, actual_sequence.items.len);
 
-    for (expected_sequence) |expected, i| {
+    for (expected_sequence, 0..) |expected, i| {
         try expectFragmentEqual(expected, actual_sequence.items[i]);
     }
 }
