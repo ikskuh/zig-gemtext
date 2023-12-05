@@ -22,7 +22,7 @@ fn fmtRtfText(
     };
 
     var last_offset: usize = 0;
-    for (data) |c, index| {
+    for (data, 0..) |c, index| {
         if (std.mem.indexOf(u8, illegal, &[1]u8{c})) |i| {
             if (index > last_offset) {
                 try writer.writeAll(data[last_offset..index]);
@@ -54,7 +54,7 @@ pub fn render(fragments: []const Fragment, writer: anytype) !void {
             .paragraph => |paragraph| try writer.print("{{\\pard \\ql \\f0 \\sa180 \\li0 \\fi0 {}\\par}}" ++ line_ending, .{fmtRtf(paragraph)}),
             .preformatted => |preformatted| {
                 try writer.writeAll("{\\pard \\ql \\f0 \\sa180 \\li0 \\fi0 \\f1 ");
-                for (preformatted.text.lines) |line, i| {
+                for (preformatted.text.lines, 0..) |line, i| {
                     if (i > 0)
                         try writer.writeAll("\\line " ++ line_ending);
                     try writer.print("{}", .{fmtRtf(line)});
@@ -63,7 +63,7 @@ pub fn render(fragments: []const Fragment, writer: anytype) !void {
             },
             .quote => |quote| {
                 try writer.writeAll("{\\pard \\ql \\f0 \\sa180 \\li720 \\fi0 ");
-                for (quote.lines) |line, i| {
+                for (quote.lines, 0..) |line, i| {
                     if (i > 0)
                         try writer.writeAll("\\line " ++ line_ending);
                     try writer.print("{}", .{fmtRtf(line)});
@@ -81,7 +81,7 @@ pub fn render(fragments: []const Fragment, writer: anytype) !void {
                 }
                 try writer.writeAll("}}}\\par}" ++ line_ending);
             },
-            .list => |list| for (list.lines) |line, i| {
+            .list => |list| for (list.lines, 0..) |line, i| {
                 try writer.writeAll("{\\pard \\ql \\f0 \\sa0 \\li360 \\fi-360 \\bullet \\tx360\\tab ");
                 try writer.print("{}", .{fmtRtf(line)});
                 if (i == list.lines.len - 1) {
