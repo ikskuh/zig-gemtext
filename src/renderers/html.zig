@@ -22,7 +22,7 @@ fn fmtHtmlText(
     };
 
     var last_offset: usize = 0;
-    for (data) |c, index| {
+    for (data, 0..) |c, index| {
         if (std.mem.indexOf(u8, illegal, &[1]u8{c})) |i| {
             if (index > last_offset) {
                 try writer.writeAll(data[last_offset..index]);
@@ -56,7 +56,7 @@ pub fn render(fragments: []const Fragment, writer: anytype) !void {
                 } else {
                     try writer.writeAll("<pre>");
                 }
-                for (preformatted.text.lines) |line, i| {
+                for (preformatted.text.lines, 0..) |line, i| {
                     if (i > 0)
                         try writer.writeAll(line_ending);
                     try writer.print("{}", .{fmtHtml(line)});
@@ -65,7 +65,7 @@ pub fn render(fragments: []const Fragment, writer: anytype) !void {
             },
             .quote => |quote| {
                 try writer.writeAll("<blockquote>");
-                for (quote.lines) |line, i| {
+                for (quote.lines, 0..) |line, i| {
                     if (i > 0)
                         try writer.writeAll("<br>" ++ line_ending);
                     try writer.print("{}", .{fmtHtml(line)});
