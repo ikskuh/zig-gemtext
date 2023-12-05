@@ -10,7 +10,7 @@ const fmtHtml = @import("html.zig").fmtHtml;
 /// The document will be rendered with CR LF line endings.
 pub fn render(fragments: []const Fragment, writer: anytype) !void {
     const line_ending = "\r\n";
-    for (fragments) |fragment, i| {
+    for (fragments, 0..) |fragment, i| {
         if (i > 0)
             try writer.writeAll(line_ending);
         switch (fragment) {
