@@ -8,7 +8,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    const allocator = &gpa.allocator;
+    const allocator = gpa.allocator();
 
     var document = gemtext.Document.init(allocator);
     defer document.deinit();
@@ -27,14 +27,14 @@ pub fn main() !void {
 
             var offset: usize = 0;
             while (offset < len) {
-                var result = try parser.feed(&document.arena.allocator, buffer[offset..len]);
+                var result = try parser.feed(document.arena.allocator(), buffer[offset..len]);
                 offset += result.consumed;
                 if (result.fragment) |*frag| {
                     try document.fragments.append(frag.*);
                 }
             }
 
-            if (try parser.finalize(&document.arena.allocator)) |*frag| {
+            if (try parser.finalize(document.arena.allocator())) |*frag| {
                 try document.fragments.append(frag.*);
             }
         }
