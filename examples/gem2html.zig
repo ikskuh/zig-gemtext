@@ -37,9 +37,10 @@ pub fn main() !void {
             offset += result.consumed;
         }
     }
-    if (try parser.finalize(allocator)) |*frag| {
-        defer frag.free(allocator);
+    var frag = try parser.finalize(allocator);
+    if (frag) |*frg| {
+        defer frg.free(allocator);
 
-        try gemtext.renderer.html(&[_]gemtext.Fragment{frag.*}, std.io.getStdOut().writer());
+        try gemtext.renderer.html(&[_]gemtext.Fragment{frg.*}, std.io.getStdOut().writer());
     }
 }

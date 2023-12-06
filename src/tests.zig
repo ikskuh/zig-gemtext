@@ -181,7 +181,8 @@ fn testFragmentParsing(fragment: ?Fragment, text: []const u8) !void {
 
     try std.testing.expectEqual(text.len, offset);
 
-    if (try parser.finalize(std.testing.allocator)) |*frag| {
+    var frg = try parser.finalize(std.testing.allocator);
+    if (frg) |*frag| {
         defer frag.free(std.testing.allocator);
         try std.testing.expectEqual(false, got_fragment);
 

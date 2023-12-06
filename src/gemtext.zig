@@ -135,7 +135,8 @@ pub const Document = struct {
             }
         }
 
-        if (try parser.finalize(doc.arena.allocator())) |*frag| {
+        var frg = try parser.finalize(doc.arena.allocator());
+        if (frg) |*frag| {
             errdefer frag.free(doc.arena.allocator());
             try doc.fragments.append(frag.*);
         }
