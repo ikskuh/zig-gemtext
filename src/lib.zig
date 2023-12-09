@@ -246,7 +246,10 @@ export fn gemtextDocumentRemove(document: *c.gemtext_document, index: usize) voi
         );
     }
 
-    _ = allocator.resize(fragments, fragments.len - 1);
+    fragments = allocator.realloc(fragments, fragments.len - 1) catch |err| t: {
+        std.log.warn("could not resize fragments: {}", .{err});
+        break :t fragments;
+    };
 }
 
 export fn gemtextDocumentDestroy(document: *c.gemtext_document) void {
@@ -279,7 +282,7 @@ fn ensureCString(str: [*:0]const u8) [*:0]const u8 {
 /// the `.lines` is kept alive.
 fn convertTextLinesToC(src_lines: *gemini.TextLines) !c.gemtext_lines {
     const lines = try allocator.alloc([*:0]const u8, src_lines.lines.len);
-    for (lines) |*line, i| {
+    for (lines, 0..) |*line, i| {
         line.* = src_lines.lines[i].ptr;
     }
 
