@@ -246,7 +246,7 @@ export fn gemtextDocumentRemove(document: *c.gemtext_document, index: usize) voi
         );
     }
 
-    fragments = allocator.shrink(fragments, fragments.len - 1);
+    _ = allocator.resize(fragments, fragments.len - 1);
 }
 
 export fn gemtextDocumentDestroy(document: *c.gemtext_document) void {
