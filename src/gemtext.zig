@@ -135,7 +135,8 @@ pub const Document = struct {
             }
         }
 
-        if (try parser.finalize(doc.arena.allocator())) |*frag| {
+        var frg = try parser.finalize(doc.arena.allocator());
+        if (frg) |*frag| {
             errdefer frag.free(doc.arena.allocator());
             try doc.fragments.append(frag.*);
         }
@@ -371,7 +372,7 @@ pub const Parser = struct {
                 else if (std.mem.startsWith(u8, line, "=>")) blk: {
                     const temp = trimLine(line[2..]);
 
-                    for (temp) |c, i| {
+                    for (temp, 0..) |c, i| {
                         const str = [_]u8{c};
                         if (std.mem.indexOf(u8, legal_whitespace, &str) != null) {
                             break :blk Fragment{ .link = Link{

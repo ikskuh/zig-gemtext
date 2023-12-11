@@ -26,7 +26,7 @@ fn getFragments(document: *c.gemtext_document) []c.gemtext_fragment {
     if (document.fragment_count > 0) {
         // we can safely remove `const` here as we've allocated this memory ourselves and
         // know that it's mutable!
-        result = @intToPtr([*]c.gemtext_fragment, @ptrToInt(document.fragments))[0..document.fragment_count];
+        result = @as([*]c.gemtext_fragment, @ptrFromInt(@intFromPtr(document.fragments)))[0..document.fragment_count];
     } else {
         result = std.mem.zeroes([]c.gemtext_fragment);
     }
@@ -43,7 +43,7 @@ fn dupeString(src: [*:0]const u8) ![*:0]u8 {
 }
 
 fn freeString(src: [*:0]const u8) void {
-    allocator.free(std.mem.sliceTo(@intToPtr([*:0]u8, @ptrToInt(src)), 0));
+    allocator.free(std.mem.sliceTo(@as([*:0]u8, @ptrFromInt(@intFromPtr(src))), 0));
 }
 
 fn dupeLines(src_lines: c.gemtext_lines) !c.gemtext_lines {
@@ -246,7 +246,10 @@ export fn gemtextDocumentRemove(document: *c.gemtext_document, index: usize) voi
         );
     }
 
-    fragments = allocator.shrink(fragments, fragments.len - 1);
+    fragments = allocator.realloc(fragments, fragments.len - 1) catch |err| t: {
+        std.log.warn("could not resize fragments: {}", .{err});
+        break :t fragments;
+    };
 }
 
 export fn gemtextDocumentDestroy(document: *c.gemtext_document) void {
@@ -259,13 +262,13 @@ export fn gemtextDocumentDestroy(document: *c.gemtext_document) void {
 }
 
 export fn gemtextParserCreate(raw_parser: *c.gemtext_parser) c.gemtext_error {
-    const parser = @ptrCast(*gemini.Parser, raw_parser);
+    const parser: *gemini.Parser = @ptrCast(raw_parser);
     parser.* = gemini.Parser.init(allocator);
     return c.GEMTEXT_SUCCESS;
 }
 
 export fn gemtextParserDestroy(raw_parser: *c.gemtext_parser) void {
-    const parser = @ptrCast(*gemini.Parser, raw_parser);
+    const parser: *gemini.Parser = @ptrCast(raw_parser);
     parser.deinit();
     raw_parser.* = undefined;
 }
@@ -279,7 +282,7 @@ fn ensureCString(str: [*:0]const u8) [*:0]const u8 {
 /// the `.lines` is kept alive.
 fn convertTextLinesToC(src_lines: *gemini.TextLines) !c.gemtext_lines {
     const lines = try allocator.alloc([*:0]const u8, src_lines.lines.len);
-    for (lines) |*line, i| {
+    for (lines, 0..) |*line, i| {
         line.* = src_lines.lines[i].ptr;
     }
 
@@ -288,7 +291,7 @@ fn convertTextLinesToC(src_lines: *gemini.TextLines) !c.gemtext_lines {
 
     return c.gemtext_lines{
         .count = lines.len,
-        .lines = @ptrCast([*][*c]const u8, lines),
+        .lines = @ptrCast(lines),
     };
 }
 
@@ -363,7 +366,7 @@ export fn gemtextParserFeed(
     total_bytes: usize,
     bytes: [*]const u8,
 ) c.gemtext_error {
-    const parser = @ptrCast(*gemini.Parser, raw_parser);
+    const parser: *gemini.Parser = @ptrCast(raw_parser);
 
     const input_slice = bytes[0..total_bytes];
     var result = parser.feed(allocator, input_slice) catch |e| return errorToC(e);
@@ -386,7 +389,7 @@ export fn gemtextParserFinalize(
     raw_parser: *c.gemtext_parser,
     out_fragment: *c.gemtext_fragment,
 ) c.gemtext_error {
-    const parser = @ptrCast(*gemini.Parser, raw_parser);
+    const parser: *gemini.Parser = @ptrCast(raw_parser);
 
     var result = parser.finalize(allocator) catch |e| return errorToC(e);
 
@@ -415,7 +418,7 @@ const CStream = struct {
     const Self = @This();
 
     context: ?*anyopaque,
-    render: fn (ctx: ?*anyopaque, bytes: [*]const u8, length: usize) callconv(.C) void,
+    render: *const fn (ctx: ?*anyopaque, bytes: [*]const u8, length: usize) callconv(.C) void,
 
     const StreamError = error{};
     const Writer = std.io.Writer(Self, StreamError, write);
@@ -511,7 +514,7 @@ export fn gemtextRender(
     raw_fragments: [*]const c.gemtext_fragment,
     fragment_count: usize,
     context: ?*anyopaque,
-    render: fn (ctx: ?*anyopaque, bytes: [*]const u8, length: usize) callconv(.C) void,
+    render: *const fn (ctx: ?*anyopaque, bytes: [*]const u8, length: usize) callconv(.C) void,
 ) c.gemtext_error {
     var stream = CStream{
         .context = context,
@@ -694,9 +697,9 @@ test "basic document interface" {
 
     try std.testing.expectEqual(@as(usize, 3), doc.fragment_count);
 
-    try std.testing.expectEqual(@intCast(c_uint, c.GEMTEXT_FRAGMENT_PARAGRAPH), doc.fragments[0].type);
-    try std.testing.expectEqual(@intCast(c_uint, c.GEMTEXT_FRAGMENT_PARAGRAPH), doc.fragments[1].type);
-    try std.testing.expectEqual(@intCast(c_uint, c.GEMTEXT_FRAGMENT_PARAGRAPH), doc.fragments[2].type);
+    try std.testing.expectEqual(@as(c_uint, @intCast(c.GEMTEXT_FRAGMENT_PARAGRAPH)), doc.fragments[0].type);
+    try std.testing.expectEqual(@as(c_uint, @intCast(c.GEMTEXT_FRAGMENT_PARAGRAPH)), doc.fragments[1].type);
+    try std.testing.expectEqual(@as(c_uint, @intCast(c.GEMTEXT_FRAGMENT_PARAGRAPH)), doc.fragments[2].type);
 
     try std.testing.expectEqualStrings("Line 1", std.mem.span(doc.fragments[0].unnamed_0.paragraph));
     try std.testing.expectEqualStrings("Line 2", std.mem.span(doc.fragments[1].unnamed_0.paragraph));
@@ -706,8 +709,8 @@ test "basic document interface" {
 
     try std.testing.expectEqual(@as(usize, 2), doc.fragment_count);
 
-    try std.testing.expectEqual(@intCast(c_uint, c.GEMTEXT_FRAGMENT_PARAGRAPH), doc.fragments[0].type);
-    try std.testing.expectEqual(@intCast(c_uint, c.GEMTEXT_FRAGMENT_PARAGRAPH), doc.fragments[1].type);
+    try std.testing.expectEqual(@as(c_uint, @intCast(c.GEMTEXT_FRAGMENT_PARAGRAPH)), doc.fragments[0].type);
+    try std.testing.expectEqual(@as(c_uint, @intCast(c.GEMTEXT_FRAGMENT_PARAGRAPH)), doc.fragments[1].type);
 
     try std.testing.expectEqualStrings("Line 1", std.mem.span(doc.fragments[0].unnamed_0.paragraph));
     try std.testing.expectEqualStrings("Line 3", std.mem.span(doc.fragments[1].unnamed_0.paragraph));
@@ -740,7 +743,7 @@ test "basic parser invocation and document building, also rendering" {
     try std.testing.expectEqual(c.GEMTEXT_SUCCESS, c.gemtextDocumentCreate(&document));
     defer c.gemtextDocumentDestroy(&document);
 
-    const document_text: []const u8 = terminateWithCrLf(@embedFile("../test-data/features.gemini"));
+    const document_text: []const u8 = terminateWithCrLf(@embedFile("test-data/features.gemini"));
 
     var fragment: c.gemtext_fragment = undefined;
 
@@ -785,7 +788,7 @@ test "basic parser invocation and document building, also rendering" {
         &list,
         struct {
             fn f(ctx: ?*anyopaque, text: [*c]const u8, len: usize) callconv(.C) void {
-                var sublist = @ptrCast(*std.ArrayList(u8), @alignCast(@alignOf(std.ArrayList(u8)), ctx.?));
+                var sublist: *std.ArrayList(u8) = @ptrCast(@alignCast(ctx.?));
                 sublist.appendSlice(text[0..len]) catch unreachable;
             }
         }.f,

@@ -115,7 +115,7 @@ test "render headings" {
 
 fn expectEqualLines(expected: TextLines, actual: TextLines) !void {
     try std.testing.expectEqual(expected.lines.len, actual.lines.len);
-    for (expected.lines) |line, i| {
+    for (expected.lines, 0..) |line, i| {
         try std.testing.expectEqualStrings(line, actual.lines[i]);
     }
 }
@@ -171,7 +171,7 @@ fn testFragmentParsing(fragment: ?Fragment, text: []const u8) !void {
             try std.testing.expectEqual(false, got_fragment);
 
             // Clear the input text to make sure we didn't accidently pass a reference to our input slice
-            std.mem.set(u8, dupe_text, '?');
+            @memset(dupe_text, '?');
 
             try expectFragmentEqual(fragment, frag.*);
             got_fragment = true;
@@ -181,12 +181,13 @@ fn testFragmentParsing(fragment: ?Fragment, text: []const u8) !void {
 
     try std.testing.expectEqual(text.len, offset);
 
-    if (try parser.finalize(std.testing.allocator)) |*frag| {
+    var frg = try parser.finalize(std.testing.allocator);
+    if (frg) |*frag| {
         defer frag.free(std.testing.allocator);
         try std.testing.expectEqual(false, got_fragment);
 
         // Clear the input text to make sure we didn't accidently pass a reference to our input slice
-        std.mem.set(u8, dupe_text, '?');
+        @memset(dupe_text, '?');
 
         try expectFragmentEqual(fragment, frag.*);
     } else {
@@ -477,11 +478,11 @@ fn testSequenceParsing(expected_sequence: []const Fragment, text: []const u8) !v
     }
 
     // Clear the input text to make sure we didn't accidently pass a reference to our input slice
-    std.mem.set(u8, dupe_text, '?');
+    @memset(dupe_text, '?');
 
     try std.testing.expectEqual(expected_sequence.len, actual_sequence.items.len);
 
-    for (expected_sequence) |expected, i| {
+    for (expected_sequence, 0..) |expected, i| {
         try expectFragmentEqual(expected, actual_sequence.items[i]);
     }
 }

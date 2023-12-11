@@ -9,7 +9,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    const allocator = &gpa.allocator;
+    var allocator = gpa.allocator();
 
     var stream = std.io.getStdIn().reader();
 
@@ -25,21 +25,23 @@ pub fn main() !void {
 
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
+        var arena_allocator = arena.allocator();
 
         var offset: usize = 0;
         while (offset < length) {
-            var result = try parser.feed(&arena.allocator, buffer[offset..length]);
+            var result = try parser.feed(arena_allocator, buffer[offset..length]);
             if (result.fragment) |*frag| {
-                defer frag.free(&arena.allocator);
+                defer frag.free(arena_allocator);
 
                 try gemtext.renderer.html(&[_]gemtext.Fragment{frag.*}, std.io.getStdOut().writer());
             }
             offset += result.consumed;
         }
     }
-    if (try parser.finalize(allocator)) |*frag| {
-        defer frag.free(allocator);
+    var frag = try parser.finalize(allocator);
+    if (frag) |*frg| {
+        defer frg.free(allocator);
 
-        try gemtext.renderer.html(&[_]gemtext.Fragment{frag.*}, std.io.getStdOut().writer());
+        try gemtext.renderer.html(&[_]gemtext.Fragment{frg.*}, std.io.getStdOut().writer());
     }
 }
