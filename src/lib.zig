@@ -239,8 +239,7 @@ export fn gemtextDocumentRemove(document: *c.gemtext_document, index: usize) voi
 
     const shift_count = document.fragment_count - index;
     if (shift_count > 0) {
-        std.mem.copy(
-            c.gemtext_fragment,
+        @memcpy(
             fragments[index .. fragments.len - 1],
             fragments[index + 1 .. fragments.len],
         );
