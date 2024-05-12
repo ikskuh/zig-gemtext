@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) void {
     lib.linkLibC();
     b.installArtifact(lib);
 
-    var main_tests = b.addTest(.{
+    const main_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/tests.zig" },
         .target = target,
         .optimize = optimize,

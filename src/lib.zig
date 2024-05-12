@@ -751,7 +751,7 @@ test "basic parser invocation and document building, also rendering" {
     while (offset < document_text.len) {
         var parsed_len: usize = undefined;
 
-        var result = c.gemtextParserFeed(
+        const result = c.gemtextParserFeed(
             &parser,
             &fragment,
             &parsed_len,
@@ -770,7 +770,7 @@ test "basic parser invocation and document building, also rendering" {
         }
     }
     {
-        var result = c.gemtextParserFinalize(&parser, &fragment);
+        const result = c.gemtextParserFinalize(&parser, &fragment);
         try std.testing.expect(result == c.GEMTEXT_SUCCESS or result == c.GEMTEXT_SUCCESS_FRAGMENT);
         if (result == c.GEMTEXT_SUCCESS_FRAGMENT) {
             try std.testing.expectEqual(c.GEMTEXT_SUCCESS, c.gemtextDocumentAppend(&document, &fragment));
