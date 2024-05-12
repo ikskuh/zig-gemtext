@@ -6,9 +6,9 @@ const example_list = [_][]const u8{
     "streaming-parser",
 };
 
-pub fn build(b: *std.build.Builder) void {
+pub fn build(b: *std.Build) void {
     const gemtext = b.createModule(.{
-        .source_file = .{ .path = "src/gemtext.zig" },
+        .root_source_file = .{ .path = "src/gemtext.zig" },
     });
 
     const target = b.standardTargetOptions(.{});
@@ -50,15 +50,16 @@ pub fn build(b: *std.build.Builder) void {
             const example = b.addExecutable(.{
                 .name = example_name ++ "-zig",
                 .root_source_file = .{ .path = "examples/" ++ example_name ++ ".zig" },
+                .target = target,
             });
 
-            example.addModule("gemtext", gemtext);
-
+            example.root_module.addImport("gemtext", gemtext);
             examples.dependOn(&b.addInstallArtifact(example, .{}).step);
         }
         {
             const example = b.addExecutable(.{
                 .name = example_name ++ "-c",
+                .target = target,
             });
             example.addCSourceFile(.{
                 .file = .{ .path = "examples/" ++ example_name ++ ".c" },
