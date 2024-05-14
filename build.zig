@@ -7,7 +7,7 @@ const example_list = [_][]const u8{
 };
 
 pub fn build(b: *std.Build) void {
-    const gemtext = b.createModule(.{
+    const gemtext = b.addModule("gemtext", .{
         .root_source_file = .{ .path = "src/gemtext.zig" },
     });
 
