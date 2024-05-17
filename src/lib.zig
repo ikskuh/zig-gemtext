@@ -239,8 +239,7 @@ export fn gemtextDocumentRemove(document: *c.gemtext_document, index: usize) voi
 
     const shift_count = document.fragment_count - index;
     if (shift_count > 0) {
-        std.mem.copy(
-            c.gemtext_fragment,
+        @memcpy(
             fragments[index .. fragments.len - 1],
             fragments[index + 1 .. fragments.len],
         );
@@ -751,7 +750,7 @@ test "basic parser invocation and document building, also rendering" {
     while (offset < document_text.len) {
         var parsed_len: usize = undefined;
 
-        var result = c.gemtextParserFeed(
+        const result = c.gemtextParserFeed(
             &parser,
             &fragment,
             &parsed_len,
@@ -770,7 +769,7 @@ test "basic parser invocation and document building, also rendering" {
         }
     }
     {
-        var result = c.gemtextParserFinalize(&parser, &fragment);
+        const result = c.gemtextParserFinalize(&parser, &fragment);
         try std.testing.expect(result == c.GEMTEXT_SUCCESS or result == c.GEMTEXT_SUCCESS_FRAGMENT);
         if (result == c.GEMTEXT_SUCCESS_FRAGMENT) {
             try std.testing.expectEqual(c.GEMTEXT_SUCCESS, c.gemtextDocumentAppend(&document, &fragment));

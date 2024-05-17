@@ -9,7 +9,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var allocator = gpa.allocator();
+    const allocator = gpa.allocator();
 
     var stream = std.io.getStdIn().reader();
 
@@ -25,7 +25,7 @@ pub fn main() !void {
 
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
-        var arena_allocator = arena.allocator();
+        const arena_allocator = arena.allocator();
 
         var offset: usize = 0;
         while (offset < length) {

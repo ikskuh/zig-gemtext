@@ -463,7 +463,7 @@ fn testSequenceParsing(expected_sequence: []const Fragment, text: []const u8) !v
 
         var offset: usize = 0;
         while (offset < dupe_text.len) {
-            var res = try parser.feed(arena.allocator(), dupe_text[offset..]);
+            const res = try parser.feed(arena.allocator(), dupe_text[offset..]);
             offset += res.consumed;
             if (res.fragment) |frag| {
                 try actual_sequence.append(frag);

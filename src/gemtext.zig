@@ -237,7 +237,7 @@ pub const Parser = struct {
                 } else if (std.mem.startsWith(u8, line, "* ")) {
                     switch (self.state) {
                         .block_quote => {
-                            var res = Result{
+                            const res = Result{
                                 .consumed = offset, // one less so we will land here the next round again
                                 .fragment = try self.createBlockFragment(fragment_allocator, .block_quote),
                             };
@@ -245,7 +245,7 @@ pub const Parser = struct {
                             return res;
                         },
                         .preformatted => {
-                            var res = Result{
+                            const res = Result{
                                 .consumed = offset, // one less so we will land here the next round again
                                 .fragment = try self.createBlockFragment(fragment_allocator, .preformatted),
                             };
@@ -271,7 +271,7 @@ pub const Parser = struct {
                 } else if (std.mem.startsWith(u8, line, ">")) {
                     switch (self.state) {
                         .list => {
-                            var res = Result{
+                            const res = Result{
                                 .consumed = offset, // one less so we will land here the next round again
                                 .fragment = try self.createBlockFragment(fragment_allocator, .list),
                             };
@@ -279,7 +279,7 @@ pub const Parser = struct {
                             return res;
                         },
                         .preformatted => {
-                            var res = Result{
+                            const res = Result{
                                 .consumed = offset, // one less so we will land here the next round again
                                 .fragment = try self.createBlockFragment(fragment_allocator, .preformatted),
                             };
@@ -361,7 +361,7 @@ pub const Parser = struct {
                 defer self.line_buffer.shrinkRetainingCapacity(0);
                 std.debug.assert(self.state == .default);
 
-                var fragment: Fragment = if (std.mem.eql(u8, trimLine(line), ""))
+                const fragment: Fragment = if (std.mem.eql(u8, trimLine(line), ""))
                     Fragment{ .empty = {} }
                 else if (std.mem.startsWith(u8, line, "###"))
                     Fragment{ .heading = Heading{ .level = .h3, .text = try dupeAndTrim(fragment_allocator, line[3..]) } }
@@ -416,7 +416,7 @@ pub const Parser = struct {
 
         // feed a line end sequence to guaranteed termination of the current line.
         // This will either finish a normal line or complete the current block.
-        var res = try self.feed(fragment_allocator, "\n");
+        const res = try self.feed(fragment_allocator, "\n");
 
         // when we get a fragment, we ended a normal line
         if (res.fragment != null)
@@ -425,13 +425,13 @@ pub const Parser = struct {
         // if not, we are currently parsing a block and must now convert the block
         // into a fragment.
         std.debug.assert(self.state != .default);
-        var frag_or_null = try self.createBlockFragmentFromStateAndResetState(fragment_allocator);
+        const frag_or_null = try self.createBlockFragmentFromStateAndResetState(fragment_allocator);
         return frag_or_null orelse unreachable;
     }
 
     const BlockType = enum { preformatted, block_quote, list };
     fn createBlockFragment(self: *Self, fragment_allocator: std.mem.Allocator, fragment_type: BlockType) !Fragment {
-        var alt_text: ?[:0]const u8 = if (fragment_type == .preformatted) blk: {
+        const alt_text: ?[:0]const u8 = if (fragment_type == .preformatted) blk: {
             std.debug.assert(self.text_block_buffer.items.len > 0);
 
             const src_alt_text = self.text_block_buffer.orderedRemove(0);
