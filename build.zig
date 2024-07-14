@@ -8,7 +8,7 @@ const example_list = [_][]const u8{
 
 pub fn build(b: *std.Build) void {
     const gemtext = b.addModule("gemtext", .{
-        .root_source_file = .{ .path = "src/gemtext.zig" },
+        .root_source_file = b.path("src/gemtext.zig"),
     });
 
     const target = b.standardTargetOptions(.{});
@@ -16,28 +16,28 @@ pub fn build(b: *std.Build) void {
 
     const lib = b.addStaticLibrary(.{
         .name = "zig-gemtext",
-        .root_source_file = .{ .path = "src/lib.zig" },
+        .root_source_file = b.path("src/lib.zig"),
         .target = target,
         .optimize = optimize,
     });
-    lib.addIncludePath(.{ .path = "include" }); // Import the C types via translate-c
+    lib.addIncludePath(b.path("include")); // Import the C types via translate-c
     lib.linkLibC();
     b.installArtifact(lib);
 
     const main_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/tests.zig" },
+        .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
     });
 
     var lib_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/lib.zig" },
+        .root_source_file = b.path("src/lib.zig"),
         .target = target,
         .optimize = optimize,
     });
     //lib_tests.linkLibrary(lib);
     lib_tests.linkLibC();
-    lib_tests.addIncludePath(.{ .path = "include" });
+    lib_tests.addIncludePath(b.path("include"));
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&b.addRunArtifact(main_tests).step);
@@ -49,7 +49,7 @@ pub fn build(b: *std.Build) void {
         {
             const example = b.addExecutable(.{
                 .name = example_name ++ "-zig",
-                .root_source_file = .{ .path = "examples/" ++ example_name ++ ".zig" },
+                .root_source_file = b.path("examples/" ++ example_name ++ ".zig"),
                 .target = target,
             });
 
@@ -62,7 +62,7 @@ pub fn build(b: *std.Build) void {
                 .target = target,
             });
             example.addCSourceFile(.{
-                .file = .{ .path = "examples/" ++ example_name ++ ".c" },
+                .file = b.path("examples/" ++ example_name ++ ".c"),
                 .flags = &[_][]const u8{
                     "-std=c11",
                     "-Weverything",
@@ -70,7 +70,7 @@ pub fn build(b: *std.Build) void {
             });
 
             example.linkLibrary(lib);
-            example.addIncludePath(.{ .path = "include" });
+            example.addIncludePath(b.path("include"));
             example.linkLibC();
 
             examples.dependOn(&b.addInstallArtifact(example, .{}).step);
