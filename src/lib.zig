@@ -725,7 +725,7 @@ test "empty parser creation/deletion" {
 fn terminateWithCrLf(comptime input_literal: [:0]const u8) [:0]const u8 {
     @setEvalBranchQuota(20 * input_literal.len);
     comptime var result: [:0]const u8 = "";
-    comptime var iter = std.mem.split(u8, input_literal, "\n");
+    comptime var iter = std.mem.splitScalar(u8, input_literal, '\n');
     inline while (comptime iter.next()) |line| {
         result = result ++ line ++ "\r\n";
     }
