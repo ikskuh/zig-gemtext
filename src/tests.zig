@@ -604,9 +604,15 @@ test "Parse examples from the spec" {
         \\
         \\=> gemini://example.org/
         \\=> gemini://example.org/ An example link
-        \\=> gemini://example.org/foo	Another example link at the same host
-        \\=> foo/bar/baz.txt	A relative link
-        \\=> 	gopher://example.org:70/1 A gopher link
+        \\=> gemini://example.org/foo
+    ++ "\t" ++
+        \\Another example link at the same host
+        \\=> foo/bar/baz.txt
+    ++ "\t" ++
+        \\A relative link
+        \\=> 
+    ++ "\t" ++
+        \\gopher://example.org:70/1 A gopher link
         \\```
         \\=>[<whitespace>]<URL>[<whitespace><USER-FRIENDLY LINK NAME>]
         \\```
